@@ -217,6 +217,7 @@ const demoAccounts = [
 
 const tabs = [
   { id: "dashboard", label: "현황", icon: Gauge, allow: () => true },
+  { id: "daily", label: "일일현황", icon: ClipboardCheck, allow: (user: AuthUser) => hasAnyRole(user, ["SUPER_ADMIN", "ADMIN"]) },
   { id: "reception", label: "접수", icon: Plus, allow: (user: AuthUser) => hasAnyRole(user, ["SUPER_ADMIN", "ADMIN", "RECEPTIONIST"]) },
   { id: "workorders", label: "정비건", icon: ClipboardList, allow: (user: AuthUser) => hasAnyRole(user, ["SUPER_ADMIN", "ADMIN", "EXECUTIVE", "RECEPTIONIST"]) },
   { id: "mechanic", label: "내 작업", icon: Wrench, allow: (user: AuthUser) => hasAnyRole(user, ["MECHANIC"]) },
@@ -339,6 +340,7 @@ export function AppShell() {
         <main className="main desktop-workspace" aria-label="PC 업무 화면">
           {message ? <p className="notice">{message}</p> : null}
           {tab === "dashboard" ? <Dashboard summary={summary} workOrders={workOrders} user={user} select={setSelectedId} switchTab={setTab} /> : null}
+          {tab === "daily" ? <DailyStatusPanel workOrders={workOrders} users={users} onOpen={(id) => { setSelectedId(id); setTab("workorders"); }} /> : null}
           {tab === "reception" ? <ReceptionPanel onCreated={refresh} /> : null}
           {tab === "workorders" ? (
             <WorkOrdersPanel workOrders={workOrders} selected={selected} users={users} canAdmin={canAdmin} onSelect={setSelectedId} onChanged={refresh} />
@@ -697,6 +699,207 @@ function Dashboard({
           <div className="kv"><span>관리자</span><strong>미배정 건 배정, 보고 승인, 계정 생성과 권한 부여를 처리합니다.</strong></div>
           <div className="kv"><span>정비사</span><strong>내 업무만 확인하고 작업 시작, 완료보고, target 변경 요청을 보냅니다.</strong></div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function DailyStatusPanel({
+  workOrders,
+  users,
+  onOpen
+}: {
+  workOrders: WorkOrder[];
+  users: UserRow[];
+  onOpen: (id: string) => void;
+}) {
+  const [selectedDate, setSelectedDate] = useState(() => toDateKey(new Date()));
+  const [priorityFilter, setPriorityFilter] = useState("ALL");
+  const [mechanicFilter, setMechanicFilter] = useState("ALL");
+  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [sortBy, setSortBy] = useState("priority");
+  const mechanicOptions = useMemo(() => makeMechanicOptions(workOrders, users), [users, workOrders]);
+  const dailyRows = useMemo(
+    () => workOrders.filter((row) => isDailyStatusTarget(row, selectedDate)),
+    [selectedDate, workOrders]
+  );
+  const filtered = useMemo(() => {
+    return sortWorkOrders(
+      dailyRows.filter((row) => {
+        const priorityOk = priorityFilter === "ALL" || row.priorityLevel === priorityFilter;
+        const mechanicOk =
+          mechanicFilter === "ALL" ||
+          (mechanicFilter === "UNASSIGNED" ? !row.assignedMechanic?.id : row.assignedMechanic?.id === mechanicFilter);
+        const statusOk =
+          statusFilter === "ALL" ||
+          (statusFilter === "ACTIVE" ? !isClosed(row) : statusFilter === "COMPLETED" ? isClosed(row) : statusFilter === "RISK" ? isRiskWorkOrder(row, selectedDate) : row.status === statusFilter);
+        return priorityOk && mechanicOk && statusOk;
+      }),
+      sortBy
+    );
+  }, [dailyRows, mechanicFilter, priorityFilter, selectedDate, sortBy, statusFilter]);
+  const approvalRows = dailyRows.filter((row) => row.status === "REPORT_SUBMITTED");
+  const delayedRows = dailyRows.filter((row) => isRiskWorkOrder(row, selectedDate));
+  const completedRows = dailyRows.filter((row) => isClosed(row) || isSameDayKey(selectedDate, row.finalCompletedAt));
+  const unassignedRows = dailyRows.filter((row) => !row.assignedMechanic?.id && !isClosed(row));
+  const inProgressRows = dailyRows.filter((row) => ["ASSIGNED", "IN_PROGRESS", "PART_WAITING", "ON_HOLD", "DELAYED"].includes(row.status));
+  const mechanicLoad = useMemo(() => mechanicDailyLoad(dailyRows), [dailyRows]);
+  const topRisks = sortWorkOrders(delayedRows.length ? delayedRows : dailyRows.filter((row) => !isClosed(row)), "priority").slice(0, 4);
+
+  return (
+    <div className="section daily-status-view">
+      <div className="section-header">
+        <div>
+          <h2>관리자 일일업무 현황</h2>
+          <p>선택한 날짜 기준으로 접수, 진행, target, 보고, 완료 건을 한 번에 리스트업합니다.</p>
+        </div>
+        <div className="toolbar">
+          <a className="icon-button" href="/api/exports/daily-status" download><Download size={16} />일일현황 엑셀</a>
+        </div>
+      </div>
+
+      <div className="daily-command-bar">
+        <Input label="기준일" type="date" value={selectedDate} onChange={setSelectedDate} />
+        <Select label="정비사" value={mechanicFilter} onChange={setMechanicFilter} options={mechanicOptions} />
+        <Select label="Priority" value={priorityFilter} onChange={setPriorityFilter} options={[{ value: "ALL", label: "전체 Priority" }, ...priorityOptions]} />
+        <Select
+          label="상태"
+          value={statusFilter}
+          onChange={setStatusFilter}
+          options={[
+            { value: "ALL", label: "전체" },
+            { value: "ACTIVE", label: "미결 전체" },
+            { value: "RISK", label: "지연/리스크" },
+            { value: "REPORT_SUBMITTED", label: "승인 대기" },
+            { value: "UNASSIGNED", label: "미배정" },
+            { value: "IN_PROGRESS", label: "작업중" },
+            { value: "COMPLETED", label: "완료/종결" }
+          ]}
+        />
+        <Select
+          label="정렬"
+          value={sortBy}
+          onChange={setSortBy}
+          options={[
+            { value: "priority", label: "Priority 높은 순" },
+            { value: "target", label: "Target 빠른 순" },
+            { value: "mechanic", label: "정비사별" },
+            { value: "status", label: "상태별" },
+            { value: "requestDate", label: "접수 최신 순" }
+          ]}
+        />
+      </div>
+
+      <div className="daily-metric-grid">
+        <button type="button" className="metric metric-button" onClick={() => setStatusFilter("ALL")}>
+          <span>금일 대상</span>
+          <strong>{dailyRows.length}</strong>
+        </button>
+        <button type="button" className="metric metric-button" onClick={() => setStatusFilter("RISK")}>
+          <span>지연/리스크</span>
+          <strong>{delayedRows.length}</strong>
+        </button>
+        <button type="button" className="metric metric-button" onClick={() => setStatusFilter("REPORT_SUBMITTED")}>
+          <span>승인 대기</span>
+          <strong>{approvalRows.length}</strong>
+        </button>
+        <button type="button" className="metric metric-button" onClick={() => setStatusFilter("UNASSIGNED")}>
+          <span>미배정</span>
+          <strong>{unassignedRows.length}</strong>
+        </button>
+        <button type="button" className="metric metric-button" onClick={() => setStatusFilter("IN_PROGRESS")}>
+          <span>진행/계획</span>
+          <strong>{inProgressRows.length}</strong>
+        </button>
+        <button type="button" className="metric metric-button" onClick={() => setStatusFilter("COMPLETED")}>
+          <span>완료/종결</span>
+          <strong>{completedRows.length}</strong>
+        </button>
+      </div>
+
+      <div className="daily-layout">
+        <section className="daily-list-section">
+          <div className="section-header">
+            <div>
+              <h2>{selectedDate} 업무 리스트</h2>
+              <p>관리자가 오전 회의나 마감 보고 전에 바로 읽을 수 있도록 현장, 장비, 조치, 다음 액션을 같이 보여줍니다.</p>
+            </div>
+            <span className="chip">{filtered.length}건</span>
+          </div>
+          <div className="daily-work-list">
+            {filtered.map((row) => (
+              <article className={`daily-work-card ${priorityClass[row.priorityLevel]}`} key={row.id}>
+                <div className="daily-work-card-main">
+                  <div className="daily-card-head">
+                    <div>
+                      <button className="link-button" type="button" onClick={() => onOpen(row.id)}>{row.requestNo}</button>
+                      <strong>{row.customer?.name ?? "미지정"} · {row.site?.name ?? row.equipment?.site?.name ?? "-"}</strong>
+                    </div>
+                    <div className="chips">
+                      <span className={`chip ${priorityChip[row.priorityLevel]}`}>{priorityLabel[row.priorityLevel]}</span>
+                      <span className="chip">{dailyStatusReason(row, selectedDate)}</span>
+                      <span className="chip">{labelStatus(row.status)}</span>
+                      {isRiskWorkOrder(row, selectedDate) ? <span className="chip red">리스크</span> : null}
+                    </div>
+                  </div>
+                  <div className="daily-card-body">
+                    <div>
+                      <span>현장/장비</span>
+                      <strong>{row.equipmentInput ?? row.equipmentNoNormalized ?? "-"} · {row.equipment?.modelName ?? "모델 미지정"}</strong>
+                      <p>{row.equipment?.vehicleRegistrationNo ?? row.equipment?.serialNo ?? "장비 세부정보 미등록"}</p>
+                    </div>
+                    <div>
+                      <span>접수 내용</span>
+                      <strong>{row.faultDescription}</strong>
+                      <p>{dailyDetailText(row)}</p>
+                    </div>
+                    <div>
+                      <span>담당/일정</span>
+                      <strong>{row.assignedMechanic?.name ?? "미배정"}</strong>
+                      <p>접수 {formatDate(row.requestDate)} · Target {formatDate(row.targetDueDate)}</p>
+                      <p className={isRiskWorkOrder(row, selectedDate) ? "danger-text" : "muted"}>{targetStatusText(row, selectedDate)}</p>
+                    </div>
+                  </div>
+                  {row.memo ? <p className="daily-card-memo">메모: {row.memo}</p> : null}
+                </div>
+                <div className="daily-card-action">
+                  <span>관리자 액션</span>
+                  <strong>{dailyActionText(row, selectedDate)}</strong>
+                  <button className="small-button" type="button" onClick={() => onOpen(row.id)}>상세 보기</button>
+                </div>
+              </article>
+            ))}
+            {!filtered.length ? <p className="notice">표시할 일일업무가 없습니다.</p> : null}
+          </div>
+        </section>
+
+        <aside className="daily-side-panel">
+          <div className="tool-panel">
+            <h2>관리자 확인 포인트</h2>
+            <div className="kv"><span>1순위</span><strong>{approvalRows.length ? `완료보고 ${approvalRows.length}건 최종 승인 필요` : "승인 대기 건 없음"}</strong></div>
+            <div className="kv"><span>2순위</span><strong>{delayedRows.length ? `지연/리스크 ${delayedRows.length}건 target 재확인` : "지연 리스크 안정"}</strong></div>
+            <div className="kv"><span>3순위</span><strong>{unassignedRows.length ? `미배정 ${unassignedRows.length}건 정비사 배정 필요` : "미배정 건 없음"}</strong></div>
+          </div>
+          <div className="tool-panel">
+            <h2>정비사별 금일 부하</h2>
+            {mechanicLoad.map((item) => (
+              <div className="daily-load-row" key={item.name}>
+                <span>{item.name}</span>
+                <strong>{item.count}건</strong>
+              </div>
+            ))}
+          </div>
+          <div className="tool-panel">
+            <h2>주요 리스크</h2>
+            {topRisks.map((row) => (
+              <button className="daily-risk-row" key={row.id} type="button" onClick={() => onOpen(row.id)}>
+                <span>{row.requestNo} · {priorityLabel[row.priorityLevel]}</span>
+                <strong>{row.customer?.name ?? "-"} / {row.assignedMechanic?.name ?? "미배정"}</strong>
+                <p>{dailyActionText(row, selectedDate)}</p>
+              </button>
+            ))}
+          </div>
+        </aside>
       </div>
     </div>
   );
@@ -1570,6 +1773,86 @@ function uniqueWorkOrders(rows: WorkOrder[]) {
     seen.add(row.id);
     return true;
   });
+}
+
+function makeMechanicOptions(workOrders: WorkOrder[], users: UserRow[]) {
+  const map = new Map<string, string>();
+  for (const row of workOrders) {
+    if (row.assignedMechanic?.id) map.set(row.assignedMechanic.id, row.assignedMechanic.name);
+  }
+  for (const user of users) {
+    if (user.roles.some((role) => role.role.code === "MECHANIC")) map.set(user.id, user.name);
+  }
+  return [{ value: "ALL", label: "전체 정비사" }, { value: "UNASSIGNED", label: "미배정" }, ...Array.from(map, ([value, label]) => ({ value, label }))];
+}
+
+function isDailyStatusTarget(row: WorkOrder, key: string) {
+  return (
+    isDateWithinSchedule(key, row) ||
+    isSameDayKey(key, row.requestDate) ||
+    isSameDayKey(key, row.targetDueDate) ||
+    isSameDayKey(key, row.mechanicReportedAt) ||
+    isSameDayKey(key, row.finalCompletedAt)
+  );
+}
+
+function isRiskWorkOrder(row: WorkOrder, key: string) {
+  const target = toDateKey(row.targetDueDate ?? "");
+  const targetOver = Boolean(target && target < key && !isClosed(row));
+  return Boolean(row.isDelayed || row.status === "DELAYED" || targetOver || (row.priorityLevel === "P1" && !isClosed(row)));
+}
+
+function dailyStatusReason(row: WorkOrder, key: string) {
+  if (isSameDayKey(key, row.finalCompletedAt)) return "금일 완료";
+  if (isSameDayKey(key, row.mechanicReportedAt)) return "금일 보고";
+  if (isSameDayKey(key, row.requestDate)) return "금일 접수";
+  if (isSameDayKey(key, row.targetDueDate)) return "금일 Target";
+  if (isDateWithinSchedule(key, row)) return "진행 범위";
+  return "참조";
+}
+
+function dailyDetailText(row: WorkOrder) {
+  const latestReport = row.reports?.[0];
+  if (row.actionTaken || latestReport?.actionTaken) return `조치: ${row.actionTaken ?? latestReport?.actionTaken}`;
+  if (row.diagnosisResult || latestReport?.diagnosisResult) return `진단: ${row.diagnosisResult ?? latestReport?.diagnosisResult}`;
+  if (row.comments?.[0]?.body) return `최근 메모: ${row.comments[0].body}`;
+  return "등록된 조치/보고 내용이 아직 없습니다.";
+}
+
+function dailyActionText(row: WorkOrder, key: string) {
+  if (!row.assignedMechanic?.id && !isClosed(row)) return "정비사 배정 필요";
+  if (row.status === "REPORT_SUBMITTED") return "완료보고 검토 후 승인";
+  if (isRiskWorkOrder(row, key)) return "지연 사유와 target 재조정 확인";
+  if (row.status === "PART_WAITING") return "부품 입고 일정 확인";
+  if (row.status === "ON_HOLD" || row.priorityLevel === "OUTSOURCE") return "외주/보류 일정 확인";
+  if (row.status === "IN_PROGRESS") return "작업 진행 상태 확인";
+  if (isClosed(row)) return "완료 내용 보관";
+  return "금일 처리 상태 모니터링";
+}
+
+function targetStatusText(row: WorkOrder, key: string) {
+  if (isClosed(row)) return `완료 ${formatDate(row.finalCompletedAt ?? row.mechanicReportedAt)}`;
+  const target = toDateKey(row.targetDueDate ?? "");
+  if (!target) return "Target 미지정";
+  if (target < key) return "Target 초과";
+  if (target === key) return "오늘 마감";
+  return `D-${daysBetween(key, target)}`;
+}
+
+function daysBetween(fromKey: string, toKey: string) {
+  const from = new Date(`${fromKey}T00:00:00`).getTime();
+  const to = new Date(`${toKey}T00:00:00`).getTime();
+  if (Number.isNaN(from) || Number.isNaN(to)) return "-";
+  return Math.max(0, Math.round((to - from) / 86_400_000));
+}
+
+function mechanicDailyLoad(rows: WorkOrder[]) {
+  const map = new Map<string, number>();
+  for (const row of rows) {
+    const name = row.assignedMechanic?.name ?? "미배정";
+    map.set(name, (map.get(name) ?? 0) + 1);
+  }
+  return Array.from(map, ([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, "ko"));
 }
 
 function formatRoles(roles: string[]) {
