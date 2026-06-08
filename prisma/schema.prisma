@@ -1,0 +1,695 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RoleCode {
+  ADMIN
+  MECHANIC
+  RECEPTIONIST
+  EXECUTIVE
+}
+
+enum EquipmentType {
+  RENTAL
+  CUSTOMER_OWNED
+}
+
+enum PriorityLevel {
+  P1
+  P2
+  P3
+  OUTSOURCE
+  UNSET
+}
+
+enum WorkOrderStatus {
+  RECEIVED
+  UNASSIGNED
+  ASSIGNED
+  IN_PROGRESS
+  REPORT_SUBMITTED
+  ADMIN_REVIEW
+  FINAL_COMPLETED
+  REJECTED
+  ON_HOLD
+  DELAYED
+  TEMPORARY_ACTION
+  PART_WAITING
+  EQUIPMENT_IN_USE
+  REVISIT_REQUIRED
+  ARCHIVED
+  CANCELLED
+}
+
+enum WorkResultType {
+  COMPLETED
+  TEMPORARY_ACTION
+  INCOMPLETE
+  REVISIT_REQUIRED
+  UNKNOWN
+}
+
+enum DelayReason {
+  PART_WAITING
+  CUSTOMER_ABSENT
+  EQUIPMENT_IN_USE
+  MECHANIC_OVERLOADED
+  OUTSOURCE_DELAY
+  ADDITIONAL_FAULT_FOUND
+  SAFETY_ISSUE
+  OTHER
+}
+
+enum MediaType {
+  IMAGE
+  VIDEO
+  FILE
+}
+
+enum AttachmentStage {
+  REQUEST
+  BEFORE
+  DURING
+  AFTER
+  REPORT
+  OUTSOURCE_RESULT
+}
+
+enum TargetChangeStatus {
+  REQUESTED
+  APPROVED
+  REJECTED
+}
+
+enum DailyPlanStatus {
+  DRAFT
+  REQUESTED
+  APPROVED
+  REJECTED
+}
+
+enum OutsourceStatus {
+  REQUESTED
+  IN_PROGRESS
+  COMPLETED
+  INCOMPLETE
+  CANCELLED
+}
+
+enum KpiExclusionScope {
+  WORK_ORDER
+  OUTSOURCE
+}
+
+enum NotificationType {
+  NEW_WORK_ORDER
+  PRIORITY_URGENT
+  ASSIGNED
+  TARGET_DUE_SOON
+  TARGET_OVERDUE
+  DELAYED
+  TARGET_CHANGE_REQUESTED
+  TARGET_CHANGE_REVIEWED
+  DAILY_PLAN_REQUESTED
+  DAILY_PLAN_REVIEWED
+  REPORT_SUBMITTED
+  REPORT_APPROVED
+  REPORT_REJECTED
+  COMMENT_ADDED
+  FOLLOW_UP_DUE
+}
+
+model User {
+  id                 String    @id @default(cuid())
+  loginId            String    @unique
+  name               String
+  title              String?
+  team               String?
+  phone              String?
+  email              String?
+  passwordHash       String
+  mustChangePassword Boolean   @default(true)
+  isActive           Boolean   @default(true)
+  loginFailCount     Int       @default(0)
+  lockedUntil        DateTime?
+  lastLoginAt        DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  roles                       UserRole[]
+  sessions                    Session[]
+  mechanicProfile             MechanicProfile?
+  defaultSites                Site[]                       @relation("SiteDefaultMechanic")
+  siteAssignments             MechanicSiteAssignment[]
+  equipmentImports            EquipmentImportLog[]         @relation("EquipmentImportBy")
+  createdWorkOrders           WorkOrder[]                  @relation("WorkOrderCreatedBy")
+  updatedWorkOrders           WorkOrder[]                  @relation("WorkOrderUpdatedBy")
+  assignedWorkOrders          WorkOrder[]                  @relation("WorkOrderAssignedMechanic")
+  statusHistories             WorkOrderStatusHistory[]     @relation("StatusChangedBy")
+  assignmentHistoriesAssigned WorkOrderAssignmentHistory[] @relation("AssignmentAssignedTo")
+  assignmentHistoriesChanged  WorkOrderAssignmentHistory[] @relation("AssignmentChangedBy")
+  reports                     WorkReport[]                 @relation("WorkReportMechanic")
+  reviewedReports             WorkReport[]                 @relation("WorkReportReviewedBy")
+  workOrderAttachments        WorkOrderAttachment[]        @relation("WorkOrderAttachmentUploadedBy")
+  workReportAttachments       WorkReportAttachment[]       @relation("WorkReportAttachmentUploadedBy")
+  comments                    Comment[]                    @relation("CommentAuthor")
+  targetRequests              TargetChangeRequest[]        @relation("TargetRequestMechanic")
+  targetReviews               TargetChangeRequest[]        @relation("TargetRequestReviewedBy")
+  targetHistories             TargetHistory[]              @relation("TargetChangedBy")
+  dailyPlansRequested         DailyWorkPlan[]              @relation("DailyPlanRequestedBy")
+  dailyPlansReviewed          DailyWorkPlan[]              @relation("DailyPlanReviewedBy")
+  dailyPlanItems              DailyWorkPlanItem[]          @relation("DailyPlanItemMechanic")
+  priorityConfigs             PriorityConfig[]             @relation("PriorityConfigUpdatedBy")
+  faultCategories             FaultCategory[]              @relation("FaultCategoryUpdatedBy")
+  outsourceVendors            OutsourceVendor[]            @relation("OutsourceVendorUpdatedBy")
+  outsourceWorks              OutsourceWork[]              @relation("OutsourceRequestedBy")
+  kpiExclusions               KpiExclusion[]               @relation("KpiExclusionCreatedBy")
+  auditLogs                   AuditLog[]                   @relation("AuditActor")
+  notifications               Notification[]               @relation("NotificationUser")
+  excelExports                ExcelExportLog[]             @relation("ExcelExportUser")
+  workDiaries                 WorkDiary[]                  @relation("WorkDiaryAuthor")
+  regularInspectionSchedules  RegularInspectionSchedule[]  @relation("RegularInspectionMechanic")
+}
+
+model Role {
+  id          String   @id @default(cuid())
+  code        RoleCode @unique
+  name        String
+  description String?
+  users       UserRole[]
+}
+
+model UserRole {
+  id        String   @id @default(cuid())
+  userId    String
+  roleId    String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model MechanicProfile {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  team            String?
+  canReceiveWork  Boolean  @default(true)
+  unavailableNote String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Customer {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  phone     String?
+  email     String?
+  memo      String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sites      Site[]
+  equipment  Equipment[]
+  workOrders WorkOrder[]
+}
+
+model Site {
+  id                String   @id @default(cuid())
+  customerId        String
+  name              String
+  contactName       String?
+  contactPhone      String?
+  email             String?
+  defaultMechanicId String?
+  memo              String?
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  customer         Customer                  @relation(fields: [customerId], references: [id])
+  defaultMechanic  User?                     @relation("SiteDefaultMechanic", fields: [defaultMechanicId], references: [id])
+  equipment        Equipment[]
+  assignments      MechanicSiteAssignment[]
+  workOrders       WorkOrder[]
+
+  @@unique([customerId, name])
+}
+
+model MechanicSiteAssignment {
+  id         String   @id @default(cuid())
+  siteId     String
+  mechanicId String
+  isPrimary  Boolean  @default(false)
+  memo       String?
+  createdAt  DateTime @default(now())
+
+  site     Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  mechanic User @relation(fields: [mechanicId], references: [id], onDelete: Cascade)
+
+  @@unique([siteId, mechanicId])
+}
+
+model Equipment {
+  id                    String    @id @default(cuid())
+  normalizedNo          String?   @unique
+  klRegistration        String?
+  equipmentNo           String?
+  placementNo           String?
+  customerId            String?
+  siteId                String?
+  manufacturer          String?
+  powerType             String?
+  kind                  String?
+  status                String?
+  managerName           String?
+  location              String?
+  operationType         String?
+  spec                  String?
+  tonnage               String?
+  maker                 String?
+  modelName             String?
+  serialNo              String?
+  year                  String?
+  operatingHours        String?
+  vehicleRegistrationNo String?
+  insurance             String?
+  insurer               String?
+  contractor            String?
+  insuredParty          String?
+  assetOwner            String?
+  assetRegisteredAt     DateTime?
+  rentalStartedAt       DateTime?
+  monthlyRentalFee      Decimal?  @db.Decimal(14, 2)
+  vehicleValue          Decimal?  @db.Decimal(14, 2)
+  raw                   Json?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  customer  Customer?  @relation(fields: [customerId], references: [id])
+  site      Site?      @relation(fields: [siteId], references: [id])
+  workOrders WorkOrder[]
+  inspections RegularInspectionSchedule[]
+}
+
+model EquipmentImportLog {
+  id           String   @id @default(cuid())
+  fileName     String
+  sheetName    String?
+  rowCount     Int      @default(0)
+  successCount Int      @default(0)
+  errorCount   Int      @default(0)
+  errors       Json?
+  importedById String?
+  createdAt    DateTime @default(now())
+
+  importedBy User? @relation("EquipmentImportBy", fields: [importedById], references: [id])
+}
+
+model FaultCategory {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  updatedById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  updatedBy  User?       @relation("FaultCategoryUpdatedBy", fields: [updatedById], references: [id])
+  workOrders WorkOrder[]
+}
+
+model PriorityConfig {
+  id            String        @id @default(cuid())
+  level         PriorityLevel @unique
+  label         String
+  color         String
+  criteria      String
+  sortOrder     Int          @default(0)
+  updatedById   String?
+  updatedAt     DateTime     @updatedAt
+  updatedBy     User?        @relation("PriorityConfigUpdatedBy", fields: [updatedById], references: [id])
+}
+
+model OutsourceVendor {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  contactName String?
+  phone       String?
+  email       String?
+  memo        String?
+  isActive    Boolean  @default(true)
+  updatedById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  updatedBy    User?           @relation("OutsourceVendorUpdatedBy", fields: [updatedById], references: [id])
+  workOrders   WorkOrder[]
+  outsourceWorks OutsourceWork[]
+}
+
+model WorkOrder {
+  id                       String          @id @default(cuid())
+  requestNo                String          @unique
+  customerId               String?
+  siteId                   String?
+  equipmentId              String?
+  equipmentNoNormalized    String?
+  equipmentInput           String?
+  requestDate              DateTime
+  requestedAt              DateTime        @default(now())
+  contactPhone             String?
+  faultCategoryId          String?
+  faultDescription         String
+  equipmentType            EquipmentType   @default(RENTAL)
+  priorityLevel            PriorityLevel   @default(UNSET)
+  status                   WorkOrderStatus @default(RECEIVED)
+  assignedMechanicId       String?
+  targetDueDate            DateTime?
+  nextTargetDueDate        DateTime?
+  isDelayed                Boolean         @default(false)
+  delayReason              DelayReason?
+  delayReasonDetail        String?
+  isOutsourced             Boolean         @default(false)
+  outsourceVendorId        String?
+  mechanicReportedAt       DateTime?
+  adminApprovedAt          DateTime?
+  finalCompletedAt         DateTime?
+  resultType               WorkResultType  @default(UNKNOWN)
+  diagnosisResult          String?
+  actionTaken              String?
+  incompleteReason         String?
+  temporaryFollowupDueDate DateTime?
+  temporaryFollowupContent String?
+  kpiExcluded              Boolean         @default(false)
+  kpiExclusionReason       String?
+  memo                     String?
+  createdById              String?
+  updatedById              String?
+  deletedAt                DateTime?
+  archivedAt               DateTime?
+  createdAt                DateTime        @default(now())
+  updatedAt                DateTime        @updatedAt
+
+  customer          Customer?        @relation(fields: [customerId], references: [id])
+  site              Site?            @relation(fields: [siteId], references: [id])
+  equipment         Equipment?       @relation(fields: [equipmentId], references: [id])
+  faultCategory     FaultCategory?   @relation(fields: [faultCategoryId], references: [id])
+  assignedMechanic  User?            @relation("WorkOrderAssignedMechanic", fields: [assignedMechanicId], references: [id])
+  outsourceVendor   OutsourceVendor? @relation(fields: [outsourceVendorId], references: [id])
+  createdBy         User?            @relation("WorkOrderCreatedBy", fields: [createdById], references: [id])
+  updatedBy         User?            @relation("WorkOrderUpdatedBy", fields: [updatedById], references: [id])
+
+  statusHistories      WorkOrderStatusHistory[]
+  assignmentHistories  WorkOrderAssignmentHistory[]
+  reports              WorkReport[]
+  workOrderAttachments WorkOrderAttachment[]
+  comments             Comment[]
+  targetChangeRequests TargetChangeRequest[]
+  targetHistories      TargetHistory[]
+  dailyPlanItems       DailyWorkPlanItem[]
+  outsourceWorks       OutsourceWork[]
+  kpiExclusions        KpiExclusion[]
+  notifications        Notification[]
+}
+
+model WorkOrderStatusHistory {
+  id          String          @id @default(cuid())
+  workOrderId String
+  fromStatus  WorkOrderStatus?
+  toStatus    WorkOrderStatus
+  reason      String?
+  changedById String?
+  createdAt   DateTime        @default(now())
+
+  workOrder WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  changedBy User?     @relation("StatusChangedBy", fields: [changedById], references: [id])
+}
+
+model WorkOrderAssignmentHistory {
+  id                 String   @id @default(cuid())
+  workOrderId        String
+  assignedMechanicId String?
+  changedById        String?
+  reason             String?
+  createdAt          DateTime @default(now())
+
+  workOrder        WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  assignedMechanic User?     @relation("AssignmentAssignedTo", fields: [assignedMechanicId], references: [id])
+  changedBy        User?     @relation("AssignmentChangedBy", fields: [changedById], references: [id])
+}
+
+model WorkReport {
+  id                       String         @id @default(cuid())
+  workOrderId              String
+  mechanicId               String?
+  resultType               WorkResultType @default(COMPLETED)
+  diagnosisResult          String
+  actionTaken              String
+  incompleteReason         String?
+  temporaryFollowupDueDate DateTime?
+  temporaryFollowupContent String?
+  submittedAt              DateTime       @default(now())
+  reviewedById             String?
+  reviewedAt               DateTime?
+  reviewMemo               String?
+
+  workOrder  WorkOrder              @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  mechanic   User?                  @relation("WorkReportMechanic", fields: [mechanicId], references: [id])
+  reviewedBy User?                  @relation("WorkReportReviewedBy", fields: [reviewedById], references: [id])
+  attachments WorkReportAttachment[]
+}
+
+model WorkOrderAttachment {
+  id           String          @id @default(cuid())
+  workOrderId  String
+  uploadedById String?
+  fileName     String
+  originalName String
+  mimeType     String
+  mediaType    MediaType
+  stage        AttachmentStage @default(REQUEST)
+  sizeBytes    Int
+  storagePath  String
+  publicPath   String?
+  createdAt    DateTime        @default(now())
+
+  workOrder  WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  uploadedBy User?     @relation("WorkOrderAttachmentUploadedBy", fields: [uploadedById], references: [id])
+}
+
+model WorkReportAttachment {
+  id           String          @id @default(cuid())
+  reportId     String
+  uploadedById String?
+  fileName     String
+  originalName String
+  mimeType     String
+  mediaType    MediaType
+  stage        AttachmentStage @default(REPORT)
+  sizeBytes    Int
+  storagePath  String
+  publicPath   String?
+  createdAt    DateTime        @default(now())
+
+  report     WorkReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  uploadedBy User?      @relation("WorkReportAttachmentUploadedBy", fields: [uploadedById], references: [id])
+}
+
+model Comment {
+  id          String   @id @default(cuid())
+  workOrderId String
+  authorId    String?
+  body        String
+  isInternal  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  workOrder WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  author    User?     @relation("CommentAuthor", fields: [authorId], references: [id])
+}
+
+model TargetChangeRequest {
+  id              String             @id @default(cuid())
+  workOrderId     String
+  requestedById   String?
+  currentDate     DateTime?
+  requestedDate   DateTime
+  reason          String
+  status          TargetChangeStatus @default(REQUESTED)
+  reviewedById    String?
+  reviewedAt      DateTime?
+  reviewMemo      String?
+  createdAt       DateTime           @default(now())
+
+  workOrder   WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  requestedBy User?     @relation("TargetRequestMechanic", fields: [requestedById], references: [id])
+  reviewedBy  User?     @relation("TargetRequestReviewedBy", fields: [reviewedById], references: [id])
+}
+
+model TargetHistory {
+  id          String    @id @default(cuid())
+  workOrderId String
+  oldDate     DateTime?
+  newDate     DateTime?
+  reason      String?
+  changedById String?
+  createdAt   DateTime  @default(now())
+
+  workOrder WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  changedBy User?     @relation("TargetChangedBy", fields: [changedById], references: [id])
+}
+
+model DailyWorkPlan {
+  id            String          @id @default(cuid())
+  planDate      DateTime
+  status        DailyPlanStatus @default(REQUESTED)
+  requestedById String?
+  reviewedById  String?
+  reviewedAt    DateTime?
+  reviewMemo    String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  requestedBy User?               @relation("DailyPlanRequestedBy", fields: [requestedById], references: [id])
+  reviewedBy  User?               @relation("DailyPlanReviewedBy", fields: [reviewedById], references: [id])
+  items       DailyWorkPlanItem[]
+}
+
+model DailyWorkPlanItem {
+  id           String   @id @default(cuid())
+  planId       String
+  workOrderId  String
+  mechanicId   String?
+  orderIndex   Int      @default(0)
+  adminMemo    String?
+  mechanicMemo String?
+  createdAt    DateTime @default(now())
+
+  plan      DailyWorkPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  workOrder WorkOrder     @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  mechanic  User?         @relation("DailyPlanItemMechanic", fields: [mechanicId], references: [id])
+
+  @@unique([planId, workOrderId])
+}
+
+model OutsourceWork {
+  id                String          @id @default(cuid())
+  workOrderId       String
+  vendorId          String?
+  requestedById     String?
+  requestDate       DateTime        @default(now())
+  targetDate        DateTime?
+  completedAt       DateTime?
+  status            OutsourceStatus @default(REQUESTED)
+  contactName       String?
+  contactPhone      String?
+  cost              Decimal?        @db.Decimal(14, 2)
+  resultDescription String?
+  memo              String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  workOrder   WorkOrder        @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  vendor      OutsourceVendor? @relation(fields: [vendorId], references: [id])
+  requestedBy User?            @relation("OutsourceRequestedBy", fields: [requestedById], references: [id])
+}
+
+model KpiExclusion {
+  id          String            @id @default(cuid())
+  scope       KpiExclusionScope @default(WORK_ORDER)
+  workOrderId String?
+  reason      String
+  detail      String?
+  createdById String?
+  createdAt   DateTime          @default(now())
+  revokedAt   DateTime?
+
+  workOrder WorkOrder? @relation(fields: [workOrderId], references: [id])
+  createdBy User?      @relation("KpiExclusionCreatedBy", fields: [createdById], references: [id])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  action     String
+  targetType String
+  targetId   String?
+  before     Json?
+  after      Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  actor User? @relation("AuditActor", fields: [actorId], references: [id])
+}
+
+model Notification {
+  id          String           @id @default(cuid())
+  userId      String?
+  workOrderId String?
+  type        NotificationType
+  title       String
+  body        String
+  readAt      DateTime?
+  createdAt   DateTime         @default(now())
+
+  user      User?      @relation("NotificationUser", fields: [userId], references: [id])
+  workOrder WorkOrder? @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+}
+
+model ExcelExportLog {
+  id        String   @id @default(cuid())
+  type      String
+  fileName  String
+  filter    Json?
+  userId    String?
+  createdAt DateTime @default(now())
+
+  user User? @relation("ExcelExportUser", fields: [userId], references: [id])
+}
+
+model WorkDiary {
+  id        String   @id @default(cuid())
+  diaryDate DateTime
+  authorId  String?
+  title     String   @default("업무일지")
+  summary   String?
+  body      Json?
+  fileName  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  author User? @relation("WorkDiaryAuthor", fields: [authorId], references: [id])
+}
+
+model RegularInspectionSchedule {
+  id          String   @id @default(cuid())
+  equipmentId String?
+  mechanicId  String?
+  siteId      String?
+  dueDate     DateTime
+  completedAt DateTime?
+  memo        String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  equipment Equipment? @relation(fields: [equipmentId], references: [id])
+  mechanic  User?      @relation("RegularInspectionMechanic", fields: [mechanicId], references: [id])
+}

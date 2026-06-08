@@ -1,0 +1,16 @@
+{
+  "name": "Maintenance Rental System",
+  "short_name": "Maintenance",
+  "description": "정비/렌탈 업무 접수, 배정, 완료보고, KPI 관리 시스템",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f7f8fb",
+  "theme_color": "#1f6f5f",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
