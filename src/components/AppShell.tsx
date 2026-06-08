@@ -421,7 +421,7 @@ function MobileAppPreview({
   const activeMechanics = users.filter((row) => row.roles.some((role) => role.role.code === "MECHANIC") && row.isActive).length;
   const completionRate = summary?.completionRate ?? 0;
   const screenTitle =
-    screen === "today" ? "오늘 업무" : screen === "queue" ? (mode === "executive" ? "주요 이슈" : "대기열") : "보고";
+    screen === "today" ? "오늘 업무" : screen === "queue" ? (mode === "executive" ? "주요 이슈" : "대기열") : "요약 보고";
 
   return (
     <aside className="mobile-preview-panel" aria-label="휴대폰 앱 프리뷰">
@@ -505,7 +505,7 @@ function MobileAppPreview({
             </button>
             <button className={screen === "report" ? "active" : ""} type="button" onClick={() => setScreen("report")}>
               <BarChart3 size={15} />
-              보고
+              요약보고
             </button>
           </nav>
         </div>
