@@ -228,7 +228,7 @@ export function AppShell() {
         {tab === "mechanic" ? <MechanicPanel workOrders={workOrders} selected={selected} onSelect={setSelectedId} onChanged={refresh} /> : null}
         {tab === "calendar" ? <CalendarPanel /> : null}
         {tab === "kpi" ? <KpiPanel enabled={canKpi} /> : null}
-        {tab === "admin" ? <AdminPanel users={users} onChanged={refresh} /> : null}
+        {tab === "admin" ? <AdminPanel currentUser={user} users={users} onChanged={refresh} /> : null}
         {tab === "exports" ? <ExportsPanel /> : null}
       </main>
     </div>
@@ -677,14 +677,76 @@ function KpiPanel({ enabled }: { enabled: boolean }) {
   );
 }
 
-function AdminPanel({ users, onChanged }: { users: UserRow[]; onChanged: () => Promise<void> }) {
+function AdminPanel({
+  currentUser,
+  users,
+  onChanged
+}: {
+  currentUser: AuthUser;
+  users: UserRow[];
+  onChanged: () => Promise<void>;
+}) {
   const [logs, setLogs] = useState<Record<string, unknown>[]>([]);
+  const [message, setMessage] = useState("");
+  const [newUser, setNewUser] = useState({
+    loginId: "",
+    name: "",
+    title: "",
+    team: "",
+    phone: "",
+    email: "",
+    temporaryPassword: "User!2026Test",
+    roleCodes: ["MECHANIC"]
+  });
+  const roleOptions = [
+    { code: "MECHANIC", label: "정비사" },
+    { code: "RECEPTIONIST", label: "접수자" },
+    { code: "ADMIN", label: "관리자" },
+    { code: "EXECUTIVE", label: "임원/대표" },
+    ...(currentUser.roles.includes("SUPER_ADMIN") ? [{ code: "SUPER_ADMIN", label: "최고 관리자" }] : [])
+  ];
   async function importMasterList() {
     await postJson("/api/equipment/import-master-list", {});
     await onChanged();
   }
   async function loadLogs() {
     setLogs(await api<Record<string, unknown>[]>("/api/admin/audit-logs"));
+  }
+  function setNewUserField(name: keyof typeof newUser, value: string | string[]) {
+    setNewUser((current) => ({ ...current, [name]: value }));
+  }
+  function toggleRole(roleCode: string) {
+    setNewUser((current) => {
+      const exists = current.roleCodes.includes(roleCode);
+      const roleCodes = exists
+        ? current.roleCodes.filter((code) => code !== roleCode)
+        : [...current.roleCodes, roleCode];
+      return { ...current, roleCodes: roleCodes.length ? roleCodes : ["MECHANIC"] };
+    });
+  }
+  async function createUser(event: React.FormEvent) {
+    event.preventDefault();
+    setMessage("");
+    try {
+      await postJson("/api/admin/users", {
+        ...newUser,
+        email: newUser.email || undefined
+      });
+      setMessage(`${newUser.name} 계정을 생성했습니다. 초기 비밀번호: ${newUser.temporaryPassword}`);
+      setNewUser({
+        loginId: "",
+        name: "",
+        title: "",
+        team: "",
+        phone: "",
+        email: "",
+        temporaryPassword: "User!2026Test",
+        roleCodes: ["MECHANIC"]
+      });
+      await onChanged();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "계정을 생성하지 못했습니다.");
+    }
   }
   return (
     <div className="section">
@@ -698,6 +760,44 @@ function AdminPanel({ users, onChanged }: { users: UserRow[]; onChanged: () => P
           <button onClick={loadLogs}><Shield size={16} />감사로그</button>
         </div>
       </div>
+      <form className="tool-panel form-grid" onSubmit={createUser}>
+        <div className="section-header">
+          <div>
+            <h2>하부 사용자 계정 생성</h2>
+            <p>고민서 책임 최고 관리자 계정으로 신규 사용자와 권한을 바로 부여합니다.</p>
+          </div>
+        </div>
+        <div className="form-row">
+          <Input label="아이디" value={newUser.loginId} onChange={(value) => setNewUserField("loginId", value)} />
+          <Input label="임시 비밀번호" value={newUser.temporaryPassword} onChange={(value) => setNewUserField("temporaryPassword", value)} />
+        </div>
+        <div className="form-row">
+          <Input label="이름" value={newUser.name} onChange={(value) => setNewUserField("name", value)} />
+          <Input label="직책" value={newUser.title} onChange={(value) => setNewUserField("title", value)} />
+        </div>
+        <div className="form-row">
+          <Input label="팀" value={newUser.team} onChange={(value) => setNewUserField("team", value)} />
+          <Input label="연락처" value={newUser.phone} onChange={(value) => setNewUserField("phone", value)} />
+        </div>
+        <Input label="이메일" value={newUser.email} onChange={(value) => setNewUserField("email", value)} />
+        <div className="field">
+          <label>권한</label>
+          <div className="role-options">
+            {roleOptions.map((role) => (
+              <label className="check-row" key={role.code}>
+                <input
+                  type="checkbox"
+                  checked={newUser.roleCodes.includes(role.code)}
+                  onChange={() => toggleRole(role.code)}
+                />
+                <span>{role.label}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+        {message ? <div className="notice">{message}</div> : null}
+        <button className="primary"><Plus size={16} />계정 생성 및 권한 부여</button>
+      </form>
       <div className="table-wrap">
         <table>
           <thead><tr><th>이름</th><th>아이디</th><th>역할</th><th>팀</th><th>상태</th></tr></thead>

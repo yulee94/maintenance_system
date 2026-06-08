@@ -4,7 +4,7 @@ import { RoleCode } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { auditLog } from "@/lib/audit";
-import { created, handleApiError, ok, readJson } from "@/lib/api";
+import { ApiError, created, handleApiError, ok, readJson } from "@/lib/api";
 import { requireUser } from "@/lib/auth";
 
 const createSchema = z.object({
@@ -17,6 +17,15 @@ const createSchema = z.object({
   roleCodes: z.array(z.nativeEnum(RoleCode)).min(1),
   temporaryPassword: z.string().min(10).default("ChangeMe!2026")
 });
+
+const elevatedRoles = new Set<RoleCode>([RoleCode.SUPER_ADMIN, RoleCode.ADMIN, RoleCode.EXECUTIVE]);
+
+function assertCanGrantRoles(actorRoles: RoleCode[], roleCodes: RoleCode[]) {
+  const actorIsSuperAdmin = actorRoles.includes(RoleCode.SUPER_ADMIN);
+  if (!actorIsSuperAdmin && roleCodes.some((role) => elevatedRoles.has(role))) {
+    throw new ApiError(403, "최고 관리자만 관리자/임원/최고 관리자 권한을 부여할 수 있습니다.");
+  }
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -38,6 +47,8 @@ export async function POST(request: NextRequest) {
   try {
     const user = await requireUser(request, [RoleCode.ADMIN]);
     const input = await readJson(request, createSchema);
+    assertCanGrantRoles(user.roles, input.roleCodes);
+
     const row = await prisma.user.create({
       data: {
         loginId: input.loginId,

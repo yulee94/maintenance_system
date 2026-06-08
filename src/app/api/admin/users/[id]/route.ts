@@ -18,6 +18,21 @@ const updateSchema = z.object({
   resetPassword: z.string().min(10).optional()
 });
 
+const elevatedRoles = new Set<RoleCode>([RoleCode.SUPER_ADMIN, RoleCode.ADMIN, RoleCode.EXECUTIVE]);
+
+function assertCanManageRoles(actorRoles: RoleCode[], currentRoles: RoleCode[], nextRoles?: RoleCode[]) {
+  const actorIsSuperAdmin = actorRoles.includes(RoleCode.SUPER_ADMIN);
+  if (actorIsSuperAdmin) return;
+
+  if (currentRoles.includes(RoleCode.SUPER_ADMIN)) {
+    throw new ApiError(403, "최고 관리자 계정은 최고 관리자만 수정할 수 있습니다.");
+  }
+
+  if (nextRoles?.some((role) => elevatedRoles.has(role))) {
+    throw new ApiError(403, "최고 관리자만 관리자/임원/최고 관리자 권한을 부여할 수 있습니다.");
+  }
+}
+
 export async function PUT(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
     const user = await requireUser(request, [RoleCode.ADMIN]);
@@ -25,6 +40,12 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
     const input = await readJson(request, updateSchema);
     const before = await prisma.user.findUnique({ where: { id }, include: { roles: { include: { role: true } } } });
     if (!before) throw new ApiError(404, "사용자를 찾을 수 없습니다.");
+    assertCanManageRoles(
+      user.roles,
+      before.roles.map((role) => role.role.code),
+      input.roleCodes
+    );
+
     const row = await prisma.user.update({
       where: { id },
       data: {

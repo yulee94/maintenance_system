@@ -12,9 +12,11 @@
 ## 사용자 관리
 
 - `GET /api/admin/users`: 사용자 목록
-- `POST /api/admin/users`: 사용자 생성
-- `PUT /api/admin/users/:id`: 사용자 수정
+- `POST /api/admin/users`: 사용자 생성 및 role 부여
+- `PUT /api/admin/users/:id`: 사용자 수정 및 role 변경
 - `PATCH /api/admin/users/:id/deactivate`: 비활성화
+
+`ADMIN`, `EXECUTIVE`, `SUPER_ADMIN` 같은 상위 권한 부여와 최고 관리자 계정 수정은 `SUPER_ADMIN`만 가능하다.
 
 ## 정비 접수/업무
 
