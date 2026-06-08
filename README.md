@@ -28,7 +28,22 @@ docs/templates/
 
 ## 빠른 실행
 
-현재 PC처럼 PostgreSQL이나 Docker가 준비되지 않은 환경에서는 `.env`에 데모 모드를 켜고 제품 서버 모드로 실행할 수 있습니다.
+서브 담당자가 DB 없이 화면만 프리뷰할 때는 아래 명령을 사용합니다. `.env`나 PostgreSQL이 없어도 데모 데이터로 제품 서버 모드가 실행됩니다.
+
+```powershell
+npm.cmd install
+npm.cmd run preview
+```
+
+이미 빌드가 되어 있고 서버만 다시 켜려면 아래 명령을 사용할 수 있습니다.
+
+```powershell
+npm.cmd run preview:quick
+```
+
+프리뷰 서버는 기본적으로 `0.0.0.0:3000`으로 열리므로 같은 사무실/내부망에서는 스크립트가 출력하는 Network URL로도 접속할 수 있습니다. 외부 인터넷에서 접속하려면 별도 배포 서버, 터널, 방화벽/공유기 설정이 필요합니다.
+
+현재 PC처럼 PostgreSQL이나 Docker가 준비되지 않은 환경에서 수동으로 실행하려면 `.env`에 데모 모드를 켜고 제품 서버 모드로 실행할 수 있습니다.
 
 ```powershell
 Copy-Item .env.example .env

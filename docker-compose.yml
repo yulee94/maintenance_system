@@ -25,6 +25,7 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://maintenance:maintenance@postgres:5432/maintenance_system?schema=public
+      DEMO_MODE: "false"
       JWT_SECRET: replace-with-a-long-random-secret
       APP_BASE_URL: http://localhost:3000
       UPLOAD_ROOT: /app/storage/uploads

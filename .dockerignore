@@ -1,0 +1,11 @@
+.git
+.next
+node_modules
+storage/uploads
+storage/backups
+.env
+.env*.local
+*.log
+tsconfig.tsbuildinfo
+coverage
+dist
