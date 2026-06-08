@@ -340,7 +340,7 @@ export function AppShell() {
         ) : null}
         {tab === "mechanic" ? <MechanicPanel user={user} workOrders={workOrders} selected={selected} onSelect={setSelectedId} onChanged={refresh} /> : null}
         {tab === "calendar" ? <CalendarPanel /> : null}
-        {tab === "kpi" ? <KpiPanel enabled={canKpi} /> : null}
+        {tab === "kpi" ? <KpiPanel enabled={canKpi} workOrders={workOrders} /> : null}
         {tab === "admin" ? <AdminPanel currentUser={user} users={users} onChanged={refresh} /> : null}
         {tab === "exports" ? <ExportsPanel /> : null}
       </main>
@@ -429,18 +429,25 @@ function Dashboard({
   select: (id: string) => void;
   switchTab: (tab: TabId) => void;
 }) {
+  const [activeMetric, setActiveMetric] = useState("pending");
   const urgent = workOrders.filter((row) => row.priorityLevel === "P1" && !isClosed(row));
   const delayed = workOrders.filter((row) => row.isDelayed || row.status === "DELAYED");
   const reviewWaiting = workOrders.filter((row) => row.status === "REPORT_SUBMITTED");
   const myWork = workOrders.filter((row) => row.assignedMechanic?.id === user.id && !isClosed(row));
   const metrics = [
-    ["전체 접수", summary?.total ?? 0],
-    ["최종 완료", summary?.completed ?? 0],
-    ["미결", summary?.pending ?? 0],
-    ["지연", summary?.delayed ?? 0],
-    ["계획 업무", summary?.planned ?? 0],
-    ["긴급", summary?.urgent ?? 0]
+    { id: "total", label: "전체 접수", value: summary?.total ?? 0, rows: workOrders },
+    { id: "completed", label: "최종 완료", value: summary?.completed ?? 0, rows: workOrders.filter(isClosed) },
+    { id: "pending", label: "미결", value: summary?.pending ?? 0, rows: workOrders.filter((row) => !isClosed(row)) },
+    { id: "delayed", label: "지연", value: summary?.delayed ?? 0, rows: delayed },
+    {
+      id: "planned",
+      label: "계획 업무",
+      value: summary?.planned ?? 0,
+      rows: workOrders.filter((row) => ["ASSIGNED", "IN_PROGRESS", "PART_WAITING", "ON_HOLD"].includes(row.status))
+    },
+    { id: "urgent", label: "긴급", value: summary?.urgent ?? 0, rows: urgent }
   ];
+  const selectedMetric = metrics.find((metric) => metric.id === activeMetric) ?? metrics[0];
 
   return (
     <div className="section">
@@ -459,12 +466,27 @@ function Dashboard({
         </div>
       </div>
       <div className="metric-grid">
-        {metrics.map(([label, value]) => (
-          <div className="metric" key={label}>
-            <span>{label}</span>
-            <strong>{value}</strong>
-          </div>
+        {metrics.map((metric) => (
+          <button
+            className={`metric metric-button ${selectedMetric.id === metric.id ? "active" : ""}`}
+            key={metric.id}
+            type="button"
+            onClick={() => setActiveMetric(metric.id)}
+          >
+            <span>{metric.label}</span>
+            <strong>{metric.value}</strong>
+          </button>
         ))}
+      </div>
+      <div className="section">
+        <div className="section-header">
+          <div>
+            <h2>{selectedMetric.label} 리스트</h2>
+            <p>현황판 숫자를 선택하면 해당 조건의 정비건만 바로 확인합니다.</p>
+          </div>
+          <span className="chip">{selectedMetric.rows.length}건</span>
+        </div>
+        <WorkList workOrders={selectedMetric.rows.slice(0, 12)} onSelect={select} />
       </div>
       <div className="insight-grid">
         <Insight title="긴급 처리" value={`${urgent.length}건`} text={urgent[0] ? `${urgent[0].customer?.name} · ${urgent[0].faultDescription}` : "긴급 미결 건 없음"} tone="red" />
@@ -614,16 +636,79 @@ function WorkOrdersPanel({
   onSelect: (id: string) => void;
   onChanged: () => Promise<void>;
 }) {
+  const [priorityFilter, setPriorityFilter] = useState("ALL");
+  const [mechanicFilter, setMechanicFilter] = useState("ALL");
+  const [statusFilter, setStatusFilter] = useState("ACTIVE");
+  const [sortBy, setSortBy] = useState("priority");
+  const mechanicOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const row of workOrders) {
+      if (row.assignedMechanic?.id) map.set(row.assignedMechanic.id, row.assignedMechanic.name);
+    }
+    for (const user of users) {
+      if (user.roles.some((role) => role.role.code === "MECHANIC")) map.set(user.id, user.name);
+    }
+    return [{ value: "ALL", label: "전체 정비사" }, { value: "UNASSIGNED", label: "미배정" }, ...Array.from(map, ([value, label]) => ({ value, label }))];
+  }, [users, workOrders]);
+  const filtered = useMemo(() => {
+    return sortWorkOrders(
+      workOrders.filter((row) => {
+        const priorityOk = priorityFilter === "ALL" || row.priorityLevel === priorityFilter;
+        const mechanicOk =
+          mechanicFilter === "ALL" ||
+          (mechanicFilter === "UNASSIGNED" ? !row.assignedMechanic?.id : row.assignedMechanic?.id === mechanicFilter);
+        const statusOk =
+          statusFilter === "ALL" ||
+          (statusFilter === "ACTIVE" ? !isClosed(row) : statusFilter === "COMPLETED" ? isClosed(row) : row.status === statusFilter);
+        return priorityOk && mechanicOk && statusOk;
+      }),
+      sortBy
+    );
+  }, [mechanicFilter, priorityFilter, sortBy, statusFilter, workOrders]);
+
   return (
     <div className="panel-grid">
       <div className="section">
         <div className="section-header">
           <div>
             <h2>정비건 목록</h2>
-            <p>Priority, 상태, target, 담당자를 한 번에 확인합니다.</p>
+            <p>인원, Priority, 상태 기준으로 필터링하고 target 또는 접수일 기준으로 정렬합니다.</p>
           </div>
+          <span className="chip">{filtered.length}건</span>
         </div>
-        <WorkList workOrders={workOrders} selectedId={selected?.id} onSelect={onSelect} />
+        <div className="filter-panel">
+          <Select label="정비사" value={mechanicFilter} onChange={setMechanicFilter} options={mechanicOptions} />
+          <Select label="Priority" value={priorityFilter} onChange={setPriorityFilter} options={[{ value: "ALL", label: "전체 Priority" }, ...priorityOptions]} />
+          <Select
+            label="상태"
+            value={statusFilter}
+            onChange={setStatusFilter}
+            options={[
+              { value: "ACTIVE", label: "미결 전체" },
+              { value: "ALL", label: "전체 상태" },
+              { value: "COMPLETED", label: "완료/종결" },
+              { value: "UNASSIGNED", label: "미배정" },
+              { value: "ASSIGNED", label: "배정" },
+              { value: "IN_PROGRESS", label: "작업중" },
+              { value: "REPORT_SUBMITTED", label: "보고 대기" },
+              { value: "DELAYED", label: "지연" },
+              { value: "PART_WAITING", label: "부품 대기" }
+            ]}
+          />
+          <Select
+            label="정렬"
+            value={sortBy}
+            onChange={setSortBy}
+            options={[
+              { value: "priority", label: "Priority 높은 순" },
+              { value: "target", label: "Target 빠른 순" },
+              { value: "requestDate", label: "접수 최신 순" },
+              { value: "mechanic", label: "정비사별" },
+              { value: "status", label: "상태별" }
+            ]}
+          />
+        </div>
+        <WorkList workOrders={filtered} selectedId={selected?.id} onSelect={onSelect} />
       </div>
       <WorkDetail selected={selected} users={users} canAdmin={canAdmin} onChanged={onChanged} />
     </div>
@@ -886,38 +971,72 @@ function Timeline({ selected }: { selected: WorkOrder }) {
 
 function CalendarPanel() {
   const [rows, setRows] = useState<WorkOrder[]>([]);
+  const [month, setMonth] = useState(() => new Date());
+  const [selectedDate, setSelectedDate] = useState(() => toDateKey(new Date()));
   useEffect(() => {
     void api<WorkOrder[]>("/api/calendar/tasks").then(setRows);
   }, []);
+  const monthDays = useMemo(() => calendarDays(month), [month]);
+  const selectedRows = useMemo(
+    () => rows.filter((row) => isDateWithinSchedule(selectedDate, row)),
+    [rows, selectedDate]
+  );
+  const monthLabel = `${month.getFullYear()}년 ${month.getMonth() + 1}월`;
+
   return (
     <div className="section">
       <div className="section-header">
-        <h2>Target 일정</h2>
+        <div>
+          <h2>월간 진행 일정</h2>
+          <p>접수일자부터 target일자까지 진행 막대로 표시하고, 날짜를 선택하면 해당 일자의 진행 내용을 확인합니다.</p>
+        </div>
+        <div className="toolbar">
+          <button type="button" onClick={() => setMonth(addMonths(month, -1))}>이전 달</button>
+          <span className="chip">{monthLabel}</span>
+          <button type="button" onClick={() => setMonth(addMonths(month, 1))}>다음 달</button>
+        </div>
       </div>
-      <div className="table-wrap">
-        <table>
-          <thead>
-            <tr><th>Target</th><th>접수번호</th><th>사업장</th><th>차량</th><th>상태</th><th>담당</th></tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={row.id}>
-                <td>{formatDate(row.targetDueDate)}</td>
-                <td>{row.requestNo}</td>
-                <td>{row.customer?.name}</td>
-                <td>{row.equipmentInput}</td>
-                <td>{labelStatus(row.status)}</td>
-                <td>{row.assignedMechanic?.name}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="calendar-board">
+        {["일", "월", "화", "수", "목", "금", "토"].map((day) => <div className="calendar-weekday" key={day}>{day}</div>)}
+        {monthDays.map((date) => {
+          const key = toDateKey(date);
+          const dayRows = rows.filter((row) => isDateWithinSchedule(key, row)).slice(0, 4);
+          const muted = date.getMonth() !== month.getMonth();
+          return (
+            <button
+              type="button"
+              className={`calendar-day ${selectedDate === key ? "selected" : ""} ${muted ? "muted-day" : ""}`}
+              key={key}
+              onClick={() => setSelectedDate(key)}
+            >
+              <span className="calendar-date">{date.getDate()}</span>
+              <div className="schedule-stack">
+                {dayRows.map((row) => (
+                  <span className={`schedule-bar ${priorityClass[row.priorityLevel]}`} key={row.id} title={`${row.requestNo} ${row.customer?.name ?? ""}`}>
+                    {isSameDayKey(key, row.requestDate) ? row.requestNo : row.assignedMechanic?.name ?? row.requestNo}
+                  </span>
+                ))}
+                {rows.filter((row) => isDateWithinSchedule(key, row)).length > 4 ? <span className="calendar-more">+ more</span> : null}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+      <div className="section">
+        <div className="section-header">
+          <div>
+            <h2>{selectedDate} 진행 내용</h2>
+            <p>선택한 날짜에 접수일과 target 범위가 걸쳐 있는 정비건입니다.</p>
+          </div>
+          <span className="chip">{selectedRows.length}건</span>
+        </div>
+        <WorkList workOrders={sortWorkOrders(selectedRows, "priority")} onSelect={() => undefined} />
       </div>
     </div>
   );
 }
 
-function KpiPanel({ enabled }: { enabled: boolean }) {
+function KpiPanel({ enabled, workOrders }: { enabled: boolean; workOrders: WorkOrder[] }) {
   const [mechanics, setMechanics] = useState<Record<string, unknown>[]>([]);
   const [priorities, setPriorities] = useState<Record<string, unknown>[]>([]);
   useEffect(() => {
@@ -935,20 +1054,59 @@ function KpiPanel({ enabled }: { enabled: boolean }) {
   const totalReceived = priorities.reduce((sum, row) => sum + Number(row.received ?? 0), 0);
   const totalCompleted = priorities.reduce((sum, row) => sum + Number(row.completed ?? 0), 0);
   const totalDelayed = priorities.reduce((sum, row) => sum + Number(row.delayed ?? 0), 0);
+  const urgentRows = workOrders.filter((row) => row.priorityLevel === "P1" && !isClosed(row));
+  const reportWaiting = workOrders.filter((row) => row.status === "REPORT_SUBMITTED");
+  const delayedRows = workOrders.filter((row) => row.isDelayed || row.status === "DELAYED");
+  const noteworthy = noteworthyWorkOrders(workOrders).slice(0, 8);
 
   return (
     <div className="section">
       <div className="section-header">
         <div>
           <h2>임원 보고/KPI</h2>
-          <p>정비사별 처리량과 Priority별 완료율을 비교합니다.</p>
+          <p>정비사별 처리량, Priority별 완료율, 특이사항과 진행 리스크를 한 페이지에서 확인합니다.</p>
         </div>
-        <a className="icon-button" href="/api/admin/kpi/export"><Download size={16} />KPI 엑셀</a>
+        <div className="toolbar">
+          <a className="icon-button" href="/api/admin/kpi/report"><Download size={16} />원페이지 보고 엑셀</a>
+          <a className="icon-button" href="/api/admin/kpi/export"><Download size={16} />KPI 엑셀</a>
+        </div>
       </div>
       <div className="insight-grid">
         <Insight title="접수" value={`${totalReceived}건`} text="데모 기간 전체 접수" tone="blue" />
         <Insight title="완료" value={`${totalCompleted}건`} text="관리자 최종 승인 기준" tone="green" />
         <Insight title="지연" value={`${totalDelayed}건`} text="Target 초과 또는 지연 상태" tone="amber" />
+        <Insight title="승인 대기" value={`${reportWaiting.length}건`} text="정비사 보고 후 관리자 검토 필요" tone="red" />
+      </div>
+      <div className="report-page">
+        <div className="section-header">
+          <div>
+            <h2>특이사항 및 진행 현황</h2>
+            <p>임원 보고 시 바로 읽을 수 있는 원페이지 요약입니다.</p>
+          </div>
+          <div className="chips">
+            <span className="chip red">긴급 {urgentRows.length}건</span>
+            <span className="chip amber">지연 {delayedRows.length}건</span>
+            <span className="chip green">보고 대기 {reportWaiting.length}건</span>
+          </div>
+        </div>
+        <div className="report-grid">
+          <div className="tool-panel">
+            <h3>관리 포인트</h3>
+            <div className="kv"><span>긴급</span><strong>P1 미완료 건은 당일 target 기준으로 우선 처리합니다.</strong></div>
+            <div className="kv"><span>승인</span><strong>보고 대기 건은 관리자 승인 전까지 KPI 완료로 반영하지 않습니다.</strong></div>
+            <div className="kv"><span>지연</span><strong>target 초과 건은 부품/외주/현장 사유를 함께 확인합니다.</strong></div>
+          </div>
+          <div className="tool-panel">
+            <h3>주요 특이사항</h3>
+            {noteworthy.map((row) => (
+              <div className="kv compact" key={row.id}>
+                <span>{row.requestNo} · {priorityLabel[row.priorityLevel]} · {labelStatus(row.status)}</span>
+                <strong>{row.customer?.name ?? "-"} / {row.assignedMechanic?.name ?? "미배정"}</strong>
+                <p className="muted">{row.actionTaken || row.diagnosisResult || row.faultDescription}</p>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
       <SimpleTable rows={mechanics} title="정비사별 KPI" />
       <SimpleTable rows={priorities} title="Priority별 KPI" />
@@ -1105,6 +1263,7 @@ function AdminPanel({
 
 function ExportsPanel() {
   const links = [
+    ["/api/admin/kpi/report", "원페이지 임원 보고"],
     ["/api/exports/daily-status", "일일 업무 진행 현황"],
     ["/api/exports/work-diary", "업무일지"],
     ["/api/exports/monthly", "월별 정비 현황"],
@@ -1117,11 +1276,14 @@ function ExportsPanel() {
   return (
     <div className="section">
       <div className="section-header">
-        <h2>엑셀 다운로드</h2>
+        <div>
+          <h2>엑셀 다운로드</h2>
+          <p>다운로드 파일은 수정 가능한 xlsx 형식으로 생성됩니다.</p>
+        </div>
       </div>
       <div className="metric-grid">
         {links.map(([href, label]) => (
-          <a className="metric" href={href} key={href}>
+          <a className="metric download-tile" href={href} download key={href}>
             <span><Download size={16} /> 다운로드</span>
             <strong>{label}</strong>
           </a>
@@ -1220,6 +1382,72 @@ function formatDate(value?: string | null) {
 
 function isClosed(workOrder: WorkOrder) {
   return ["FINAL_COMPLETED", "ARCHIVED", "CANCELLED"].includes(workOrder.status);
+}
+
+function sortWorkOrders(rows: WorkOrder[], sortBy: string) {
+  return [...rows].sort((a, b) => {
+    if (sortBy === "target") return dateValue(a.targetDueDate) - dateValue(b.targetDueDate);
+    if (sortBy === "requestDate") return dateValue(b.requestDate) - dateValue(a.requestDate);
+    if (sortBy === "mechanic") return (a.assignedMechanic?.name ?? "미배정").localeCompare(b.assignedMechanic?.name ?? "미배정", "ko");
+    if (sortBy === "status") return labelStatus(a.status).localeCompare(labelStatus(b.status), "ko");
+    return priorityRank(a.priorityLevel) - priorityRank(b.priorityLevel) || dateValue(a.targetDueDate) - dateValue(b.targetDueDate);
+  });
+}
+
+function noteworthyWorkOrders(rows: WorkOrder[]) {
+  return sortWorkOrders(
+    rows.filter(
+      (row) =>
+        row.priorityLevel === "P1" ||
+        row.status === "DELAYED" ||
+        row.status === "REPORT_SUBMITTED" ||
+        row.status === "PART_WAITING" ||
+        row.status === "ON_HOLD" ||
+        row.isDelayed
+    ),
+    "priority"
+  );
+}
+
+function priorityRank(priority: WorkOrder["priorityLevel"]) {
+  return { P1: 0, P2: 1, P3: 2, OUTSOURCE: 3, UNSET: 4 }[priority] ?? 9;
+}
+
+function dateValue(value?: string | null) {
+  if (!value) return Number.MAX_SAFE_INTEGER;
+  const time = new Date(value).getTime();
+  return Number.isNaN(time) ? Number.MAX_SAFE_INTEGER : time;
+}
+
+function addMonths(date: Date, amount: number) {
+  return new Date(date.getFullYear(), date.getMonth() + amount, 1);
+}
+
+function calendarDays(month: Date) {
+  const first = new Date(month.getFullYear(), month.getMonth(), 1);
+  const start = new Date(first);
+  start.setDate(first.getDate() - first.getDay());
+  return Array.from({ length: 42 }, (_, index) => {
+    const date = new Date(start);
+    date.setDate(start.getDate() + index);
+    return date;
+  });
+}
+
+function toDateKey(value: Date | string) {
+  const date = typeof value === "string" ? new Date(value) : value;
+  if (Number.isNaN(date.getTime())) return "";
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function isSameDayKey(key: string, value?: string | null) {
+  return Boolean(value && toDateKey(value) === key);
+}
+
+function isDateWithinSchedule(key: string, row: WorkOrder) {
+  const start = toDateKey(row.requestDate);
+  const end = toDateKey(row.targetDueDate ?? row.requestDate);
+  return key >= start && key <= end;
 }
 
 function formatCell(value: unknown) {

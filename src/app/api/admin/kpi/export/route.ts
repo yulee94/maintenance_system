@@ -1,1 +1,1 @@
-export { GET } from "../../../exports/daily-status/route";
+export { GET } from "../report/route";
