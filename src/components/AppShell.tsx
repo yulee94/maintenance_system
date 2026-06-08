@@ -150,7 +150,7 @@ export function AppShell() {
       setSummary(summaryData);
       setWorkOrders(workOrderData);
       setSelectedId((current) => current ?? workOrderData[0]?.id ?? null);
-      if (user.roles.includes("ADMIN")) {
+      if (user.roles.includes("SUPER_ADMIN") || user.roles.includes("ADMIN")) {
         setUsers(await api<UserRow[]>("/api/admin/users"));
       }
     } catch (error) {
@@ -177,7 +177,7 @@ export function AppShell() {
     return <LoginScreen onLogin={setUser} loading={loading} />;
   }
 
-  const canKpi = user.roles.includes("ADMIN") || user.roles.includes("EXECUTIVE");
+  const canKpi = user.roles.includes("SUPER_ADMIN") || user.roles.includes("ADMIN") || user.roles.includes("EXECUTIVE");
 
   return (
     <div className="app">
@@ -236,8 +236,8 @@ export function AppShell() {
 }
 
 function LoginScreen({ onLogin, loading }: { onLogin: (user: AuthUser) => void; loading: boolean }) {
-  const [loginId, setLoginId] = useState("son.hn");
-  const [password, setPassword] = useState("ChangeMe!2026");
+  const [loginId, setLoginId] = useState("ko.ms");
+  const [password, setPassword] = useState("Admin!2026Test");
   const [error, setError] = useState("");
 
   async function submit(event: React.FormEvent) {

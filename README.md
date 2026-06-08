@@ -75,7 +75,13 @@ npm.cmd run dev
 
 ## 초기 계정
 
-모든 seed 사용자의 임시 비밀번호는 다음과 같습니다.
+최고 관리자 테스트 계정은 고민서 책임으로 seed됩니다.
+
+```text
+ko.ms / Admin!2026Test
+```
+
+그 외 seed 사용자의 임시 비밀번호는 다음과 같습니다.
 
 ```text
 ChangeMe!2026
@@ -84,6 +90,7 @@ ChangeMe!2026
 예시 로그인:
 
 ```text
+ko.ms / Admin!2026Test
 son.hn / ChangeMe!2026
 kim.ms / ChangeMe!2026
 jegal.ts / ChangeMe!2026

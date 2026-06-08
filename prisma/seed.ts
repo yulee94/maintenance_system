@@ -10,11 +10,13 @@ import {
 const prisma = new PrismaClient();
 
 const temporaryPassword = "ChangeMe!2026";
+const superAdminPassword = "Admin!2026Test";
 
 async function main() {
   const passwordHash = await bcrypt.hash(temporaryPassword, 10);
 
   const roleRows = [
+    [RoleCode.SUPER_ADMIN, "최고 관리자", "시스템 전체 권한과 초기 운영 책임자"],
     [RoleCode.ADMIN, "관리자", "운영 설정, 배정, 승인, KPI 전체 권한"],
     [RoleCode.MECHANIC, "정비사", "전체 업무 조회, 작업 시작, 완료보고, 계획업무 요청"],
     [RoleCode.RECEPTIONIST, "접수자", "정비의뢰 접수 및 접수 내용 수정"],
@@ -38,6 +40,8 @@ async function main() {
     team: string;
     phone: string;
     roleCodes: RoleCode[];
+    password?: string;
+    mustChangePassword?: boolean;
   };
 
   const users: UserSeed[] = [
@@ -47,7 +51,16 @@ async function main() {
     { loginId: "kim.jb", name: "김진봉", title: "매니저", team: "예방점검팀", phone: "010-3558-5593", roleCodes: [RoleCode.MECHANIC] },
     { loginId: "lee.sj", name: "이승준", title: "매니저", team: "예방점검팀", phone: "010-4029-4341", roleCodes: [RoleCode.MECHANIC] },
     { loginId: "kim.ms", name: "김민식", title: "전무", team: "관리자", phone: "010-8520-5984", roleCodes: [RoleCode.ADMIN, RoleCode.EXECUTIVE] },
-    { loginId: "ko.ms", name: "고민서", title: "책임", team: "관리자", phone: "010-9360-7590", roleCodes: [RoleCode.ADMIN] },
+    {
+      loginId: "ko.ms",
+      name: "고민서",
+      title: "책임",
+      team: "관리자",
+      phone: "010-9360-7590",
+      roleCodes: [RoleCode.SUPER_ADMIN, RoleCode.ADMIN],
+      password: superAdminPassword,
+      mustChangePassword: false
+    },
     { loginId: "son.hn", name: "손화나", title: "선임", team: "접수/관리", phone: "010-8388-8356", roleCodes: [RoleCode.RECEPTIONIST, RoleCode.ADMIN] }
   ];
 
@@ -60,7 +73,9 @@ async function main() {
         title: userSeed.title,
         team: userSeed.team,
         phone: userSeed.phone,
-        isActive: true
+        isActive: true,
+        passwordHash: userSeed.password ? await bcrypt.hash(userSeed.password, 10) : undefined,
+        mustChangePassword: userSeed.mustChangePassword
       },
       create: {
         loginId: userSeed.loginId,
@@ -68,8 +83,8 @@ async function main() {
         title: userSeed.title,
         team: userSeed.team,
         phone: userSeed.phone,
-        passwordHash,
-        mustChangePassword: true
+        passwordHash: userSeed.password ? await bcrypt.hash(userSeed.password, 10) : passwordHash,
+        mustChangePassword: userSeed.mustChangePassword ?? true
       }
     });
     usersByLogin.set(user.loginId, user.id);
@@ -251,6 +266,11 @@ async function main() {
       targetType: "system",
       after: {
         temporaryPassword,
+        superAdmin: {
+          loginId: "ko.ms",
+          password: superAdminPassword,
+          name: "고민서 책임"
+        },
         note: "All seed users require password change on first login."
       }
     }

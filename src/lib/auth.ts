@@ -73,6 +73,7 @@ export async function getCurrentUserFromCookies(): Promise<AuthUser | null> {
 export async function requireUser(request: NextRequest, allowedRoles?: RoleCode[]) {
   const user = await getCurrentUserFromRequest(request);
   if (!user) throw new ApiError(401, "Login is required.");
+  if (user.roles.includes(RoleCode.SUPER_ADMIN)) return user;
   if (allowedRoles?.length && !allowedRoles.some((role) => user.roles.includes(role))) {
     throw new ApiError(403, "You do not have permission for this action.");
   }
@@ -80,11 +81,11 @@ export async function requireUser(request: NextRequest, allowedRoles?: RoleCode[
 }
 
 export function canAccessKpi(user: AuthUser) {
-  return user.roles.includes(RoleCode.ADMIN) || user.roles.includes(RoleCode.EXECUTIVE);
+  return user.roles.includes(RoleCode.SUPER_ADMIN) || user.roles.includes(RoleCode.ADMIN) || user.roles.includes(RoleCode.EXECUTIVE);
 }
 
 export function canAdmin(user: AuthUser) {
-  return user.roles.includes(RoleCode.ADMIN);
+  return user.roles.includes(RoleCode.SUPER_ADMIN) || user.roles.includes(RoleCode.ADMIN);
 }
 
 export const sessionCookieOptions = {
