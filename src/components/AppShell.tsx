@@ -12,10 +12,12 @@ import {
   Gauge,
   KeyRound,
   LogOut,
+  Monitor,
   Plus,
   RefreshCcw,
   Search,
   Shield,
+  Smartphone,
   Upload,
   UserCog,
   Users,
@@ -225,6 +227,8 @@ const tabs = [
 ] as const;
 
 type TabId = (typeof tabs)[number]["id"];
+type MobilePreviewMode = "mechanic" | "admin" | "executive";
+type MobilePreviewScreen = "today" | "queue" | "report";
 
 export function AppShell() {
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -331,20 +335,206 @@ export function AppShell() {
         </div>
       </header>
 
-      <main className="main">
-        {message ? <p className="notice">{message}</p> : null}
-        {tab === "dashboard" ? <Dashboard summary={summary} workOrders={workOrders} user={user} select={setSelectedId} switchTab={setTab} /> : null}
-        {tab === "reception" ? <ReceptionPanel onCreated={refresh} /> : null}
-        {tab === "workorders" ? (
-          <WorkOrdersPanel workOrders={workOrders} selected={selected} users={users} canAdmin={canAdmin} onSelect={setSelectedId} onChanged={refresh} />
-        ) : null}
-        {tab === "mechanic" ? <MechanicPanel user={user} workOrders={workOrders} selected={selected} onSelect={setSelectedId} onChanged={refresh} /> : null}
-        {tab === "calendar" ? <CalendarPanel /> : null}
-        {tab === "kpi" ? <KpiPanel enabled={canKpi} workOrders={workOrders} /> : null}
-        {tab === "admin" ? <AdminPanel currentUser={user} users={users} onChanged={refresh} /> : null}
-        {tab === "exports" ? <ExportsPanel /> : null}
-      </main>
+      <div className="app-workspace">
+        <main className="main desktop-workspace" aria-label="PC 업무 화면">
+          {message ? <p className="notice">{message}</p> : null}
+          {tab === "dashboard" ? <Dashboard summary={summary} workOrders={workOrders} user={user} select={setSelectedId} switchTab={setTab} /> : null}
+          {tab === "reception" ? <ReceptionPanel onCreated={refresh} /> : null}
+          {tab === "workorders" ? (
+            <WorkOrdersPanel workOrders={workOrders} selected={selected} users={users} canAdmin={canAdmin} onSelect={setSelectedId} onChanged={refresh} />
+          ) : null}
+          {tab === "mechanic" ? <MechanicPanel user={user} workOrders={workOrders} selected={selected} onSelect={setSelectedId} onChanged={refresh} /> : null}
+          {tab === "calendar" ? <CalendarPanel /> : null}
+          {tab === "kpi" ? <KpiPanel enabled={canKpi} workOrders={workOrders} /> : null}
+          {tab === "admin" ? <AdminPanel currentUser={user} users={users} onChanged={refresh} /> : null}
+          {tab === "exports" ? <ExportsPanel /> : null}
+        </main>
+        <MobileAppPreview
+          user={user}
+          summary={summary}
+          workOrders={workOrders}
+          users={users}
+          onOpenWorkOrder={(id) => {
+            setSelectedId(id);
+            setTab(canAdmin || hasAnyRole(user, ["EXECUTIVE", "RECEPTIONIST"]) ? "workorders" : "mechanic");
+          }}
+        />
+      </div>
     </div>
+  );
+}
+
+function MobileAppPreview({
+  user,
+  summary,
+  workOrders,
+  users,
+  onOpenWorkOrder
+}: {
+  user: AuthUser;
+  summary: Summary | null;
+  workOrders: WorkOrder[];
+  users: UserRow[];
+  onOpenWorkOrder: (id: string) => void;
+}) {
+  const availableModes = useMemo(() => {
+    const modes: { id: MobilePreviewMode; label: string; allow: boolean }[] = [
+      { id: "mechanic", label: "정비사", allow: true },
+      { id: "admin", label: "관리자", allow: hasAnyRole(user, ["SUPER_ADMIN", "ADMIN"]) },
+      { id: "executive", label: "임원", allow: hasAnyRole(user, ["SUPER_ADMIN", "ADMIN", "EXECUTIVE"]) }
+    ];
+    return modes.filter((mode) => mode.allow);
+  }, [user]);
+  const [mode, setMode] = useState<MobilePreviewMode>(() => initialMobilePreviewMode(user));
+  const [screen, setScreen] = useState<MobilePreviewScreen>("today");
+
+  useEffect(() => {
+    if (!availableModes.some((item) => item.id === mode)) {
+      setMode(availableModes[0]?.id ?? "mechanic");
+    }
+  }, [availableModes, mode]);
+
+  const openRows = useMemo(() => workOrders.filter((row) => !isClosed(row)), [workOrders]);
+  const urgentRows = useMemo(() => openRows.filter((row) => row.priorityLevel === "P1"), [openRows]);
+  const delayedRows = useMemo(() => workOrders.filter((row) => row.isDelayed || row.status === "DELAYED"), [workOrders]);
+  const reportWaiting = useMemo(() => workOrders.filter((row) => row.status === "REPORT_SUBMITTED"), [workOrders]);
+  const mechanicRows = useMemo(() => {
+    const assignedToMe = openRows.filter((row) => row.assignedMechanic?.id === user.id);
+    const assignedForPreview = openRows.filter((row) => row.assignedMechanic?.id);
+    return assignedToMe.length ? assignedToMe : assignedForPreview;
+  }, [openRows, user.id]);
+  const adminRows = useMemo(
+    () =>
+      uniqueWorkOrders([
+        ...openRows.filter((row) => !row.assignedMechanic?.id),
+        ...reportWaiting,
+        ...delayedRows,
+        ...urgentRows
+      ]),
+    [delayedRows, openRows, reportWaiting, urgentRows]
+  );
+  const executiveRows = useMemo(() => noteworthyWorkOrders(workOrders), [workOrders]);
+  const previewRows = mode === "mechanic" ? mechanicRows : mode === "admin" ? adminRows : executiveRows;
+  const visibleRows = sortWorkOrders(previewRows, mode === "executive" ? "priority" : "target").slice(0, screen === "report" ? 3 : 5);
+  const activeMechanics = users.filter((row) => row.roles.some((role) => role.role.code === "MECHANIC") && row.isActive).length;
+  const completionRate = summary?.completionRate ?? 0;
+  const screenTitle =
+    screen === "today" ? "오늘 업무" : screen === "queue" ? (mode === "executive" ? "주요 이슈" : "대기열") : "보고";
+
+  return (
+    <aside className="mobile-preview-panel" aria-label="휴대폰 앱 프리뷰">
+      <div className="preview-panel-title">
+        <div>
+          <h2>휴대폰 앱 프리뷰</h2>
+          <p>PC 브라우저 옆에서 역할별 모바일 화면을 바로 확인합니다.</p>
+        </div>
+        <span className="chip blue"><Smartphone size={14} />Mobile</span>
+      </div>
+      <div className="preview-mode-tabs" role="tablist" aria-label="모바일 역할 선택">
+        {availableModes.map((item) => (
+          <button
+            key={item.id}
+            className={mode === item.id ? "active" : ""}
+            type="button"
+            onClick={() => {
+              setMode(item.id);
+              setScreen("today");
+            }}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+      <div className="phone-shell">
+        <div className="phone-screen">
+          <div className="phone-status">
+            <span>09:41</span>
+            <span>5G 100%</span>
+          </div>
+          <header className="mobile-app-head">
+            <div>
+              <span>{mode === "mechanic" ? "정비사 앱" : mode === "admin" ? "관리자 앱" : "임원 앱"}</span>
+              <strong>{mode === "mechanic" ? user.name : mode === "admin" ? "운영 관제" : "경영 보고"}</strong>
+            </div>
+            <button type="button" title="PC 화면 연결" onClick={() => visibleRows[0] && onOpenWorkOrder(visibleRows[0].id)}>
+              <Monitor size={16} />
+            </button>
+          </header>
+
+          <section className="mobile-stats">
+            <MobileStat label={mode === "executive" ? "완료율" : "미결"} value={mode === "executive" ? `${completionRate}%` : `${openRows.length}`} />
+            <MobileStat label={mode === "mechanic" ? "내 작업" : mode === "admin" ? "승인" : "지연"} value={`${mode === "mechanic" ? mechanicRows.length : mode === "admin" ? reportWaiting.length : delayedRows.length}`} />
+            <MobileStat label={mode === "admin" ? "정비사" : "긴급"} value={`${mode === "admin" ? activeMechanics : urgentRows.length}`} />
+          </section>
+
+          <div className="mobile-screen-title">
+            <div>
+              <span>{formatDate(new Date().toISOString())}</span>
+              <strong>{screenTitle}</strong>
+            </div>
+            <span className={`chip ${mode === "executive" ? "amber" : "green"}`}>{visibleRows.length}건</span>
+          </div>
+
+          <div className="mobile-content">
+            {screen === "report" ? (
+              <div className="mobile-report">
+                <div className="mobile-report-card">
+                  <span>진행 현황</span>
+                  <strong>접수 {summary?.total ?? 0}건 · 완료 {summary?.completed ?? 0}건</strong>
+                  <p>긴급 {urgentRows.length}건, 지연 {delayedRows.length}건, 승인 대기 {reportWaiting.length}건을 모바일에서 먼저 확인합니다.</p>
+                </div>
+                {visibleRows.map((row) => <MobileWorkRow key={row.id} row={row} onOpen={onOpenWorkOrder} />)}
+              </div>
+            ) : (
+              <div className="mobile-work-list">
+                {visibleRows.length ? visibleRows.map((row) => <MobileWorkRow key={row.id} row={row} onOpen={onOpenWorkOrder} />) : <p className="mobile-empty">표시할 업무가 없습니다.</p>}
+              </div>
+            )}
+          </div>
+
+          <nav className="mobile-bottom-nav" aria-label="모바일 화면 전환">
+            <button className={screen === "today" ? "active" : ""} type="button" onClick={() => setScreen("today")}>
+              <CalendarDays size={15} />
+              오늘
+            </button>
+            <button className={screen === "queue" ? "active" : ""} type="button" onClick={() => setScreen("queue")}>
+              <ClipboardList size={15} />
+              정비건
+            </button>
+            <button className={screen === "report" ? "active" : ""} type="button" onClick={() => setScreen("report")}>
+              <BarChart3 size={15} />
+              보고
+            </button>
+          </nav>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+function MobileStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function MobileWorkRow({ row, onOpen }: { row: WorkOrder; onOpen: (id: string) => void }) {
+  return (
+    <button className={`mobile-work-row ${priorityClass[row.priorityLevel]}`} type="button" onClick={() => onOpen(row.id)}>
+      <div>
+        <strong>{row.requestNo}</strong>
+        <span>{row.customer?.name ?? "미지정"} · {row.equipmentInput ?? row.equipmentNoNormalized}</span>
+      </div>
+      <p>{row.faultDescription}</p>
+      <div className="mobile-row-meta">
+        <span>{priorityLabel[row.priorityLevel]}</span>
+        <span>{labelStatus(row.status)}</span>
+        <span>{formatDate(row.targetDueDate)}</span>
+      </div>
+    </button>
   );
 }
 
@@ -1365,6 +1555,21 @@ function Info({ label, value }: { label: string; value?: string | null }) {
 
 function hasAnyRole(user: AuthUser, roles: string[]) {
   return roles.some((role) => user.roles.includes(role));
+}
+
+function initialMobilePreviewMode(user: AuthUser): MobilePreviewMode {
+  if (hasAnyRole(user, ["SUPER_ADMIN", "ADMIN"])) return "admin";
+  if (hasAnyRole(user, ["EXECUTIVE"])) return "executive";
+  return "mechanic";
+}
+
+function uniqueWorkOrders(rows: WorkOrder[]) {
+  const seen = new Set<string>();
+  return rows.filter((row) => {
+    if (seen.has(row.id)) return false;
+    seen.add(row.id);
+    return true;
+  });
 }
 
 function formatRoles(roles: string[]) {
