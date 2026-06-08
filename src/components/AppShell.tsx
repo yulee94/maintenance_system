@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   BarChart3,
+  Bot,
   CalendarDays,
   CheckCircle2,
   ClipboardCheck,
@@ -16,6 +17,7 @@ import {
   Plus,
   RefreshCcw,
   Search,
+  Send,
   Shield,
   Smartphone,
   Upload,
@@ -229,7 +231,21 @@ const tabs = [
 
 type TabId = (typeof tabs)[number]["id"];
 type MobilePreviewMode = "mechanic" | "admin" | "executive";
-type MobilePreviewScreen = "today" | "queue" | "report";
+type MobilePreviewScreen = "today" | "workorders" | "completed" | "ai";
+type MobileAiResult = {
+  source: "openai" | "demo" | "local";
+  answer: string;
+  matches: {
+    requestNo: string;
+    customer: string;
+    equipment: string;
+    faultDescription: string;
+    diagnosisResult: string;
+    actionTaken: string;
+    status: string;
+    similarity: number;
+  }[];
+};
 
 export function AppShell() {
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -389,6 +405,10 @@ function MobileAppPreview({
   }, [user]);
   const [mode, setMode] = useState<MobilePreviewMode>(() => initialMobilePreviewMode(user));
   const [screen, setScreen] = useState<MobilePreviewScreen>("today");
+  const [aiQuestion, setAiQuestion] = useState("시동은 걸리지만 출력이 떨어지는 경우 과거에는 어떻게 조치했나요?");
+  const [aiResult, setAiResult] = useState<MobileAiResult | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState("");
 
   useEffect(() => {
     if (!availableModes.some((item) => item.id === mode)) {
@@ -400,6 +420,8 @@ function MobileAppPreview({
   const urgentRows = useMemo(() => openRows.filter((row) => row.priorityLevel === "P1"), [openRows]);
   const delayedRows = useMemo(() => workOrders.filter((row) => row.isDelayed || row.status === "DELAYED"), [workOrders]);
   const reportWaiting = useMemo(() => workOrders.filter((row) => row.status === "REPORT_SUBMITTED"), [workOrders]);
+  const completedRows = useMemo(() => workOrders.filter(isClosed), [workOrders]);
+  const todayRows = useMemo(() => workOrders.filter((row) => isDailyStatusTarget(row, toDateKey(new Date()))), [workOrders]);
   const mechanicRows = useMemo(() => {
     const assignedToMe = openRows.filter((row) => row.assignedMechanic?.id === user.id);
     const assignedForPreview = openRows.filter((row) => row.assignedMechanic?.id);
@@ -416,12 +438,33 @@ function MobileAppPreview({
     [delayedRows, openRows, reportWaiting, urgentRows]
   );
   const executiveRows = useMemo(() => noteworthyWorkOrders(workOrders), [workOrders]);
-  const previewRows = mode === "mechanic" ? mechanicRows : mode === "admin" ? adminRows : executiveRows;
-  const visibleRows = sortWorkOrders(previewRows, mode === "executive" ? "priority" : "target").slice(0, screen === "report" ? 3 : 5);
+  const workOrderRows = mode === "mechanic" ? mechanicRows : mode === "admin" ? adminRows : executiveRows;
+  const previewRows =
+    screen === "completed"
+      ? completedRows
+      : screen === "today"
+        ? (mode === "mechanic" ? todayRows.filter((row) => row.assignedMechanic?.id === user.id) : todayRows)
+        : workOrderRows;
+  const visibleRows = sortWorkOrders(previewRows, screen === "completed" ? "requestDate" : mode === "executive" ? "priority" : "target").slice(0, 5);
   const activeMechanics = users.filter((row) => row.roles.some((role) => role.role.code === "MECHANIC") && row.isActive).length;
   const completionRate = summary?.completionRate ?? 0;
   const screenTitle =
-    screen === "today" ? "오늘 업무" : screen === "queue" ? (mode === "executive" ? "주요 이슈" : "대기열") : "요약 보고";
+    screen === "today" ? "오늘 업무" : screen === "workorders" ? "정비건" : screen === "completed" ? "완료건" : "AI 문의";
+
+  async function askAi(event?: React.FormEvent) {
+    event?.preventDefault();
+    const question = aiQuestion.trim();
+    if (!question) return;
+    setAiLoading(true);
+    setAiError("");
+    try {
+      setAiResult(await postJson<MobileAiResult>("/api/mobile/ai", { question }));
+    } catch (error) {
+      setAiError(error instanceof Error ? error.message : "AI 답변을 불러오지 못했습니다.");
+    } finally {
+      setAiLoading(false);
+    }
+  }
 
   return (
     <aside className="mobile-preview-panel" aria-label="휴대폰 앱 프리뷰">
@@ -474,19 +517,21 @@ function MobileAppPreview({
               <span>{formatDate(new Date().toISOString())}</span>
               <strong>{screenTitle}</strong>
             </div>
-            <span className={`chip ${mode === "executive" ? "amber" : "green"}`}>{visibleRows.length}건</span>
+            <span className={`chip ${screen === "ai" ? "blue" : mode === "executive" ? "amber" : "green"}`}>
+              {screen === "ai" ? (aiResult?.source === "openai" ? "GPT" : "데이터") : `${visibleRows.length}건`}
+            </span>
           </div>
 
           <div className="mobile-content">
-            {screen === "report" ? (
-              <div className="mobile-report">
-                <div className="mobile-report-card">
-                  <span>진행 현황</span>
-                  <strong>접수 {summary?.total ?? 0}건 · 완료 {summary?.completed ?? 0}건</strong>
-                  <p>긴급 {urgentRows.length}건, 지연 {delayedRows.length}건, 승인 대기 {reportWaiting.length}건을 모바일에서 먼저 확인합니다.</p>
-                </div>
-                {visibleRows.map((row) => <MobileWorkRow key={row.id} row={row} onOpen={onOpenWorkOrder} />)}
-              </div>
+            {screen === "ai" ? (
+              <MobileAiPanel
+                question={aiQuestion}
+                result={aiResult}
+                loading={aiLoading}
+                error={aiError}
+                onQuestion={setAiQuestion}
+                onAsk={askAi}
+              />
             ) : (
               <div className="mobile-work-list">
                 {visibleRows.length ? visibleRows.map((row) => <MobileWorkRow key={row.id} row={row} onOpen={onOpenWorkOrder} />) : <p className="mobile-empty">표시할 업무가 없습니다.</p>}
@@ -499,18 +544,98 @@ function MobileAppPreview({
               <CalendarDays size={15} />
               오늘
             </button>
-            <button className={screen === "queue" ? "active" : ""} type="button" onClick={() => setScreen("queue")}>
+            <button className={screen === "workorders" ? "active" : ""} type="button" onClick={() => setScreen("workorders")}>
               <ClipboardList size={15} />
               정비건
             </button>
-            <button className={screen === "report" ? "active" : ""} type="button" onClick={() => setScreen("report")}>
-              <BarChart3 size={15} />
-              요약보고
+            <button className={screen === "completed" ? "active" : ""} type="button" onClick={() => setScreen("completed")}>
+              <CheckCircle2 size={15} />
+              완료건
+            </button>
+            <button className={screen === "ai" ? "active" : ""} type="button" onClick={() => setScreen("ai")}>
+              <Bot size={15} />
+              AI
             </button>
           </nav>
         </div>
       </div>
     </aside>
+  );
+}
+
+function MobileAiPanel({
+  question,
+  result,
+  loading,
+  error,
+  onQuestion,
+  onAsk
+}: {
+  question: string;
+  result: MobileAiResult | null;
+  loading: boolean;
+  error: string;
+  onQuestion: (value: string) => void;
+  onAsk: (event?: React.FormEvent) => void;
+}) {
+  const examples = [
+    "시동은 걸리는데 출력이 떨어질 때 과거 조치 추천",
+    "유압 라인 누유가 재발하면 무엇을 먼저 확인할까?",
+    "브레이크 밀림 증상 과거 수리 이력 찾아줘"
+  ];
+
+  return (
+    <div className="mobile-ai-panel">
+      <form className="mobile-ai-form" onSubmit={onAsk}>
+        <label htmlFor="mobile-ai-question">정비/업무 문의</label>
+        <textarea
+          id="mobile-ai-question"
+          value={question}
+          onChange={(event) => onQuestion(event.target.value)}
+          placeholder="예: 290호기 출력 저하 유사 이력과 조치 방법 알려줘"
+        />
+        <button className="primary" type="submit" disabled={loading}>
+          <Send size={14} />
+          {loading ? "분석 중" : "AI 추천"}
+        </button>
+      </form>
+      <div className="mobile-ai-examples">
+        {examples.map((example) => (
+          <button type="button" key={example} onClick={() => onQuestion(example)}>
+            {example}
+          </button>
+        ))}
+      </div>
+      {error ? <p className="error">{error}</p> : null}
+      <div className="mobile-ai-answer">
+        {result ? (
+          <>
+            <div className="mobile-ai-source">
+              <span>{result.source === "openai" ? "GPT 연결 답변" : "데모/과거 데이터 추천"}</span>
+              <strong>{result.matches.length}개 유사 이력 참조</strong>
+            </div>
+            <pre>{result.answer}</pre>
+            {result.matches.length ? (
+              <div className="mobile-ai-matches">
+                {result.matches.slice(0, 3).map((match) => (
+                  <div key={match.requestNo}>
+                    <span>{match.requestNo} · {match.customer}</span>
+                    <strong>{match.faultDescription}</strong>
+                    <p>{match.actionTaken}</p>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </>
+        ) : (
+          <div className="mobile-report-card">
+            <span>AI 추천</span>
+            <strong>정비 문의와 과거 이력 검색을 같이 처리합니다.</strong>
+            <p>OPENAI_API_KEY가 있으면 GPT로 답하고, 없으면 데모/과거 정비 데이터에서 유사 사례를 찾아 추천합니다.</p>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 

@@ -59,6 +59,13 @@ DEMO_MODE="true"
 APP_BASE_URL="http://localhost:3000"
 ```
 
+휴대폰 앱 프리뷰의 `AI` 탭은 과거 정비 이력을 먼저 검색한 뒤 답변합니다. `.env`에 `OPENAI_API_KEY`를 넣으면 OpenAI Responses API로 연결되고, 키가 없으면 데모/로컬 정비 이력 기반 추천 답변으로 동작합니다.
+
+```text
+OPENAI_API_KEY=""
+OPENAI_MODEL="gpt-4.1-mini"
+```
+
 접속 URL:
 
 ```text

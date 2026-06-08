@@ -307,15 +307,15 @@ a {
 .mobile-stats div {
   display: grid;
   gap: 4px;
-  min-height: 72px;
+  min-height: 58px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
-  padding: 10px;
+  padding: 9px;
 }
 
 .mobile-stats strong {
-  font-size: 20px;
+  font-size: 18px;
 }
 
 .mobile-screen-title {
@@ -354,11 +354,11 @@ a {
   display: grid;
   justify-items: stretch;
   gap: 7px;
-  min-height: 118px;
+  min-height: 92px;
   border-left-width: 5px;
   border-radius: 8px;
   background: #fff;
-  padding: 12px;
+  padding: 10px;
   text-align: left;
 }
 
@@ -417,6 +417,121 @@ a {
   font-weight: 800;
 }
 
+.mobile-ai-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.mobile-ai-form {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 10px;
+}
+
+.mobile-ai-form label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.mobile-ai-form textarea {
+  min-height: 92px;
+  padding: 9px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.mobile-ai-form .primary {
+  min-height: 36px;
+}
+
+.mobile-ai-examples {
+  display: grid;
+  gap: 6px;
+}
+
+.mobile-ai-examples button {
+  justify-content: start;
+  min-height: 34px;
+  border-radius: 8px;
+  padding: 7px 9px;
+  color: var(--green-strong);
+  font-size: 11px;
+  font-weight: 800;
+  text-align: left;
+}
+
+.mobile-ai-answer {
+  display: grid;
+  gap: 8px;
+}
+
+.mobile-ai-source {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.mobile-ai-source span,
+.mobile-ai-source strong {
+  font-size: 11px;
+}
+
+.mobile-ai-source span {
+  color: var(--green-strong);
+  font-weight: 800;
+}
+
+.mobile-ai-answer pre {
+  overflow: auto;
+  max-height: 230px;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 10px;
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.mobile-ai-matches {
+  display: grid;
+  gap: 7px;
+}
+
+.mobile-ai-matches div {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 9px;
+}
+
+.mobile-ai-matches span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.mobile-ai-matches strong,
+.mobile-ai-matches p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.mobile-ai-matches p {
+  color: var(--muted);
+}
+
 .mobile-report-card {
   display: grid;
   gap: 6px;
@@ -447,9 +562,9 @@ a {
 
 .mobile-bottom-nav {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px;
-  padding: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+  padding: 8px;
   border-top: 1px solid var(--line);
   background: #fff;
 }
@@ -458,11 +573,11 @@ a {
   display: grid;
   place-items: center;
   gap: 3px;
-  min-height: 48px;
+  min-height: 46px;
   border: 0;
   border-radius: 8px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 800;
 }
 
