@@ -38,6 +38,16 @@ export async function verifySession(token: string): Promise<AuthUser | null> {
     const userId = verified.payload.sub;
     if (!userId) return null;
 
+    if (appEnv.demoMode) {
+      return {
+        id: userId,
+        loginId: String(verified.payload.loginId ?? ""),
+        name: String(verified.payload.name ?? "Demo User"),
+        roles: Array.isArray(verified.payload.roles) ? (verified.payload.roles as RoleCode[]) : [],
+        mustChangePassword: false
+      };
+    }
+
     const user = await prisma.user.findUnique({
       where: { id: userId },
       include: { roles: { include: { role: true } } }

@@ -1,4 +1,5 @@
 export const appEnv = {
+  demoMode: process.env.DEMO_MODE === "true",
   jwtSecret: process.env.JWT_SECRET ?? "development-only-maintenance-secret-change-me",
   uploadRoot: process.env.UPLOAD_ROOT ?? "./storage/uploads",
   backupRoot: process.env.BACKUP_ROOT ?? "./storage/backups",

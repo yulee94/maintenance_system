@@ -5,6 +5,8 @@ import { prisma } from "@/lib/db";
 import { auditLog } from "@/lib/audit";
 import { handleApiError, ok, readJson, ApiError } from "@/lib/api";
 import { SESSION_COOKIE, sessionCookieOptions, signSession } from "@/lib/auth";
+import { appEnv } from "@/lib/env";
+import { demoLogin } from "@/lib/demo";
 
 const schema = z.object({
   loginId: z.string().min(1),
@@ -14,6 +16,15 @@ const schema = z.object({
 export async function POST(request: NextRequest) {
   try {
     const input = await readJson(request, schema);
+    if (appEnv.demoMode) {
+      const demoUser = demoLogin(input.loginId, input.password);
+      if (!demoUser) throw new ApiError(401, "아이디 또는 비밀번호를 확인하세요.");
+      const token = await signSession(demoUser);
+      const response = ok(demoUser);
+      response.cookies.set(SESSION_COOKIE, token, sessionCookieOptions);
+      return response;
+    }
+
     const user = await prisma.user.findUnique({
       where: { loginId: input.loginId },
       include: { roles: { include: { role: true } } }

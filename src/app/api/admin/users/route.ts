@@ -6,6 +6,8 @@ import { prisma } from "@/lib/db";
 import { auditLog } from "@/lib/audit";
 import { ApiError, created, handleApiError, ok, readJson } from "@/lib/api";
 import { requireUser } from "@/lib/auth";
+import { appEnv } from "@/lib/env";
+import { demoCreateUser, demoUsers } from "@/lib/demo";
 
 const createSchema = z.object({
   loginId: z.string().min(2),
@@ -30,6 +32,7 @@ function assertCanGrantRoles(actorRoles: RoleCode[], roleCodes: RoleCode[]) {
 export async function GET(request: NextRequest) {
   try {
     await requireUser(request, [RoleCode.ADMIN]);
+    if (appEnv.demoMode) return ok(demoUsers());
     const rows = await prisma.user.findMany({
       include: {
         roles: { include: { role: true } },
@@ -48,6 +51,9 @@ export async function POST(request: NextRequest) {
     const user = await requireUser(request, [RoleCode.ADMIN]);
     const input = await readJson(request, createSchema);
     assertCanGrantRoles(user.roles, input.roleCodes);
+    if (appEnv.demoMode) {
+      return created(demoCreateUser(input));
+    }
 
     const row = await prisma.user.create({
       data: {

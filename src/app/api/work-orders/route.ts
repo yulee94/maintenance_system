@@ -5,6 +5,8 @@ import { prisma } from "@/lib/db";
 import { auditLog } from "@/lib/audit";
 import { ApiError, created, handleApiError, ok, parseDateInput, readJson, startOfLocalDate } from "@/lib/api";
 import { requireUser } from "@/lib/auth";
+import { appEnv } from "@/lib/env";
+import { demoWorkOrders } from "@/lib/demo";
 import {
   findDuplicateCandidates,
   findEquipmentByKeyword,
@@ -34,6 +36,7 @@ const createSchema = z.object({
 export async function GET(request: NextRequest) {
   try {
     await requireUser(request);
+    if (appEnv.demoMode) return ok(demoWorkOrders());
     const params = request.nextUrl.searchParams;
     const status = params.get("status") as WorkOrderStatus | null;
     const priority = params.get("priority") as PriorityLevel | null;
@@ -78,6 +81,28 @@ export async function POST(request: NextRequest) {
   try {
     const user = await requireUser(request, [RoleCode.ADMIN, RoleCode.RECEPTIONIST]);
     const input = await readJson(request, createSchema);
+    if (appEnv.demoMode) {
+      const row = {
+        id: `demo-work-order-${Date.now()}`,
+        requestNo: `${input.requestDate.replaceAll("-", "")}-999`,
+        customer: { id: `demo-customer-${Date.now()}`, name: input.customerName },
+        site: { id: `demo-site-${Date.now()}`, name: input.siteName ?? input.customerName },
+        equipmentInput: input.equipmentInput,
+        equipmentNoNormalized: normalizeEquipmentKeyword(input.equipmentInput),
+        requestDate: new Date(input.requestDate).toISOString(),
+        contactPhone: input.contactPhone,
+        faultDescription: input.faultDescription,
+        equipmentType: input.equipmentType,
+        priorityLevel: input.priorityLevel,
+        status: WorkOrderStatus.UNASSIGNED,
+        targetDueDate: input.targetDueDate ? new Date(input.targetDueDate).toISOString() : null,
+        assignedMechanic: null,
+        comments: [],
+        reports: []
+      };
+      demoWorkOrders().unshift(row);
+      return created({ workOrder: row, duplicateCandidates: [] });
+    }
     const requestDate = startOfLocalDate(input.requestDate);
     const equipment = await findEquipmentByKeyword(input.equipmentInput);
     const normalized = equipment?.normalizedNo ?? normalizeEquipmentKeyword(input.equipmentInput);

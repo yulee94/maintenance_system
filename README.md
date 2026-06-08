@@ -43,6 +43,14 @@ docs/templates/
 Copy-Item .env.example .env
 ```
 
+PostgreSQL 없이 화면과 계정 생성 흐름만 먼저 테스트하려면 `.env`에서 다음 값을 켭니다.
+
+```text
+DEMO_MODE="true"
+```
+
+데모 모드에서는 고민서 책임 테스트 계정과 샘플 정비건이 메모리 데이터로 동작합니다. 서버를 재시작하면 데모 생성 데이터는 초기화됩니다.
+
 2. PostgreSQL을 준비합니다.
 
 Docker가 설치된 환경:
