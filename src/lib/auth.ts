@@ -101,7 +101,7 @@ export function canAdmin(user: AuthUser) {
 export const sessionCookieOptions = {
   httpOnly: true,
   sameSite: "lax" as const,
-  secure: process.env.NODE_ENV === "production",
+  secure: process.env.NODE_ENV === "production" && appEnv.appBaseUrl.startsWith("https://"),
   path: "/",
   maxAge: SESSION_HOURS * 60 * 60
 };

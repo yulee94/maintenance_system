@@ -47,6 +47,14 @@ button {
   cursor: pointer;
 }
 
+button,
+.primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+}
+
 button:disabled {
   cursor: not-allowed;
   opacity: 0.55;
@@ -178,6 +186,58 @@ a {
   box-shadow: var(--shadow);
 }
 
+.login-layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 420px) minmax(420px, 620px);
+  gap: 18px;
+  align-items: stretch;
+  width: min(1060px, 100%);
+}
+
+.demo-panel {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 26px;
+  box-shadow: var(--shadow);
+}
+
+.demo-account-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.demo-account {
+  display: grid;
+  justify-items: start;
+  gap: 5px;
+  min-height: 112px;
+  border-radius: 8px;
+  padding: 14px;
+  text-align: left;
+}
+
+.demo-account.active {
+  border-color: var(--green);
+  background: rgba(31, 111, 95, 0.08);
+}
+
+.demo-account span {
+  color: var(--green-strong);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.demo-account strong {
+  font-size: 18px;
+}
+
+.demo-account small {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
 .login-panel h1 {
   margin: 0 0 8px;
   font-size: 24px;
@@ -294,6 +354,55 @@ a {
   font-size: 24px;
 }
 
+.insight-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(170px, 1fr));
+  gap: 10px;
+}
+
+.insight {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 14px;
+}
+
+.insight span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.insight strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 24px;
+}
+
+.insight p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.insight.red {
+  border-left: 5px solid var(--red);
+}
+
+.insight.amber {
+  border-left: 5px solid var(--amber);
+}
+
+.insight.green {
+  border-left: 5px solid var(--green);
+}
+
+.insight.blue {
+  border-left: 5px solid var(--blue);
+}
+
 .work-list {
   display: grid;
   gap: 10px;
@@ -323,6 +432,11 @@ a {
 
 .work-card.outsource {
   border-left-color: var(--blue);
+}
+
+.work-card.selected {
+  border-color: var(--green);
+  box-shadow: 0 0 0 2px rgba(31, 111, 95, 0.12);
 }
 
 .work-card-header {
@@ -402,6 +516,12 @@ a {
   border-color: rgba(31, 111, 95, 0.35);
   background: rgba(31, 111, 95, 0.09);
   color: var(--green-strong);
+}
+
+.chip.blue {
+  border-color: rgba(37, 99, 235, 0.32);
+  background: rgba(37, 99, 235, 0.08);
+  color: var(--blue);
 }
 
 .detail-panel,
@@ -500,6 +620,11 @@ th {
   .metric-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .insight-grid,
+  .login-layout {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 640px) {
@@ -513,6 +638,11 @@ th {
   }
 
   .metric-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .demo-account-grid,
+  .insight-grid {
     grid-template-columns: 1fr;
   }
 

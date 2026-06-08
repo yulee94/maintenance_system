@@ -4,11 +4,24 @@ import { prisma } from "@/lib/db";
 import { auditLog } from "@/lib/audit";
 import { handleApiError, ok } from "@/lib/api";
 import { requireUser } from "@/lib/auth";
+import { appEnv } from "@/lib/env";
 import { numberFromEquipmentText, pick, readMasterListRows, templateFiles } from "@/lib/excel";
 
 export async function POST(request: NextRequest) {
   try {
     const user = await requireUser(request, [RoleCode.ADMIN]);
+    if (appEnv.demoMode) {
+      return ok({
+        id: `demo-import-${Date.now()}`,
+        fileName: templateFiles.masterList,
+        sheetName: "K&L 지게차 Master list",
+        rowCount: 12,
+        successCount: 12,
+        errorCount: 0,
+        createdAt: new Date().toISOString(),
+        importedBy: { id: user.id, name: user.name }
+      });
+    }
     const rows = await readMasterListRows();
     let successCount = 0;
     const errors: unknown[] = [];
