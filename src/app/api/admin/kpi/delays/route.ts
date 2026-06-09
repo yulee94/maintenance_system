@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
   try {
     await requireUser(request, [RoleCode.ADMIN, RoleCode.EXECUTIVE]);
     if (appEnv.demoMode) {
-      return ok(demoWorkOrders().filter((row) => row.isDelayed || row.status === WorkOrderStatus.DELAYED));
+      return ok((await demoWorkOrders()).filter((row) => row.isDelayed || row.status === WorkOrderStatus.DELAYED));
     }
     const rows = await prisma.workOrder.findMany({
       where: { OR: [{ isDelayed: true }, { status: WorkOrderStatus.DELAYED }], archivedAt: null, deletedAt: null },

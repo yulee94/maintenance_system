@@ -162,8 +162,8 @@ export async function buildWorkDiaryWorkbook() {
 
 export async function buildExecutiveReportWorkbook() {
   const rows = await getExportWorkOrders("all");
-  const mechanicKpi = appEnv.demoMode ? demoMechanicKpi() : await buildDbMechanicKpiRows();
-  const priorityKpi = appEnv.demoMode ? demoPriorityKpi() : await buildDbPriorityKpiRows();
+  const mechanicKpi = appEnv.demoMode ? await demoMechanicKpi() : await buildDbMechanicKpiRows();
+  const priorityKpi = appEnv.demoMode ? await demoPriorityKpi() : await buildDbPriorityKpiRows();
   const workbook = new ExcelJS.Workbook();
   setupWorkbook(workbook);
 
@@ -338,7 +338,7 @@ export async function workbookResponse(workbook: ExcelJS.Workbook, fileName: str
 }
 
 async function getExportWorkOrders(filter: ExportFilter): Promise<ExportWorkOrder[]> {
-  const rows = appEnv.demoMode ? demoRows() : await dbRows(filter);
+  const rows = appEnv.demoMode ? await demoRows() : await dbRows(filter);
   return applyExportFilter(rows, filter).sort((a, b) => {
     const requestDiff = b.requestDate.getTime() - a.requestDate.getTime();
     if (requestDiff) return requestDiff;
@@ -383,7 +383,7 @@ async function demoEquipmentExportRows(): Promise<ExportEquipmentAsset[]> {
     });
   });
 
-  for (const row of demoRows()) {
+  for (const row of await demoRows()) {
     const assetNo = numberFromEquipmentText(row.equipment) || row.equipment || row.requestNo;
     const existing = assets.get(assetNo);
     if (existing) {
@@ -464,8 +464,8 @@ async function dbEquipmentExportRows(): Promise<ExportEquipmentAsset[]> {
   }));
 }
 
-function demoRows(): ExportWorkOrder[] {
-  return demoWorkOrders().map((row) => ({
+async function demoRows(): Promise<ExportWorkOrder[]> {
+  return (await demoWorkOrders()).map((row) => ({
     requestNo: row.requestNo,
     requestDate: new Date(row.requestDate),
     customer: row.customer?.name ?? "",

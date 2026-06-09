@@ -8,6 +8,25 @@ export const templateFiles = {
   workDiary: "26.05.27업무일지.xlsx"
 };
 
+export type DailyStatusTemplateRow = {
+  sourceRow: number;
+  section: "completed-progress" | "pending";
+  category: string;
+  sequence: string;
+  requestDate: string;
+  customerName: string;
+  equipmentInput: string;
+  modelName: string;
+  serialNo: string;
+  faultDescription: string;
+  mechanicName: string;
+  targetDueDate: string;
+  completedAt: string;
+  actionTaken: string;
+  memo: string;
+  priorityText: string;
+};
+
 export function templatePath(fileName: string) {
   return path.join(appEnv.excelTemplateRoot, fileName);
 }
@@ -61,6 +80,47 @@ export async function readMasterListRows() {
     });
     if (Object.values(object).some(Boolean)) rows.push(object);
   });
+  return rows;
+}
+
+export async function readDailyStatusRows(): Promise<DailyStatusTemplateRow[]> {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.readFile(templatePath(templateFiles.dailyStatus));
+  const worksheet = workbook.worksheets[0];
+  if (!worksheet) return [];
+
+  let section: DailyStatusTemplateRow["section"] = "completed-progress";
+  const rows: DailyStatusTemplateRow[] = [];
+
+  worksheet.eachRow((row, rowNumber) => {
+    const values = row.values as ExcelJS.CellValue[];
+    const texts = Array.from({ length: 13 }, (_, index) => getCellText(values[index + 1]));
+    if (texts[0] === "구분" && texts[1] === "No.") {
+      section = texts[11] === "비고" || texts[12] === "Status" ? "pending" : "completed-progress";
+      return;
+    }
+    if (!["미", "추"].includes(texts[0]) || !texts[2] || !texts[3] || !texts[7]) return;
+
+    rows.push({
+      sourceRow: rowNumber,
+      section,
+      category: texts[0],
+      sequence: texts[1],
+      requestDate: texts[2],
+      customerName: texts[3],
+      equipmentInput: texts[4],
+      modelName: texts[5],
+      serialNo: texts[6],
+      faultDescription: texts[7],
+      mechanicName: texts[8],
+      targetDueDate: texts[9],
+      completedAt: texts[10],
+      actionTaken: section === "pending" ? "" : texts[11],
+      memo: section === "pending" ? texts[11] : "",
+      priorityText: texts[12]
+    });
+  });
+
   return rows;
 }
 

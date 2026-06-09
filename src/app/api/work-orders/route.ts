@@ -36,7 +36,7 @@ const createSchema = z.object({
 export async function GET(request: NextRequest) {
   try {
     await requireUser(request);
-    if (appEnv.demoMode) return ok(demoWorkOrders());
+    if (appEnv.demoMode) return ok(await demoWorkOrders());
     const params = request.nextUrl.searchParams;
     const status = params.get("status") as WorkOrderStatus | null;
     const priority = params.get("priority") as PriorityLevel | null;
@@ -82,7 +82,7 @@ export async function POST(request: NextRequest) {
     const user = await requireUser(request, [RoleCode.ADMIN, RoleCode.RECEPTIONIST]);
     const input = await readJson(request, createSchema);
     if (appEnv.demoMode) {
-      const row = demoCreateWorkOrder(input);
+      const row = await demoCreateWorkOrder(input);
       return created({ workOrder: row, duplicateCandidates: [] });
     }
     const requestDate = startOfLocalDate(input.requestDate);

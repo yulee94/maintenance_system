@@ -9,7 +9,7 @@ import { demoMechanicKpi } from "@/lib/demo";
 export async function GET(request: NextRequest) {
   try {
     await requireUser(request, [RoleCode.ADMIN, RoleCode.EXECUTIVE]);
-    if (appEnv.demoMode) return ok(demoMechanicKpi());
+    if (appEnv.demoMode) return ok(await demoMechanicKpi());
     return ok(await getMechanicKpi());
   } catch (error) {
     return handleApiError(error);

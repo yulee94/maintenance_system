@@ -5,6 +5,13 @@ import {
   WorkOrderStatus,
   WorkResultType
 } from "@prisma/client";
+import {
+  type DailyStatusTemplateRow,
+  numberFromEquipmentText,
+  pick,
+  readDailyStatusRows,
+  readMasterListRows
+} from "@/lib/excel";
 
 type DemoUser = {
   id: string;
@@ -95,7 +102,7 @@ type DemoStore = {
   auditLogs: Record<string, unknown>[];
 };
 
-const globalForDemo = globalThis as unknown as { demoStore?: DemoStore };
+const globalForDemo = globalThis as unknown as { demoStore?: Promise<DemoStore> };
 
 const roleName: Record<RoleCode, string> = {
   SUPER_ADMIN: "최고 관리자",
@@ -182,7 +189,166 @@ function audit(store: DemoStore, action: string, targetType: string, targetId?: 
   });
 }
 
-function makeStore(): DemoStore {
+async function buildTemplateWorkOrders(users: DemoUser[], dailyRows: DailyStatusTemplateRow[]): Promise<DemoWorkOrder[]> {
+  const masterRows = await readMasterListRows().catch(() => []);
+  const masterByNo = new Map<string, Record<string, string>>();
+  const masterBySerial = new Map<string, Record<string, string>>();
+  for (const row of masterRows) {
+    const normalizedNo = numberFromEquipmentText(pick(row, ["K&L 등록", "No.", "배치No", "장비 No"]));
+    if (normalizedNo) masterByNo.set(normalizedNo, row);
+    const serialNo = pick(row, ["차대번호"]);
+    if (serialNo) masterBySerial.set(normalizeLookup(serialNo), row);
+  }
+
+  return dailyRows.map((row, index) => {
+    const equipmentCode = normalizeTemplateEquipment(row.equipmentInput);
+    const equipmentDigits = numberFromEquipmentText(row.equipmentInput);
+    const master = masterByNo.get(equipmentCode) ?? masterByNo.get(equipmentDigits) ?? masterBySerial.get(normalizeLookup(row.serialNo));
+    const priorityLevel = priorityFromTemplate(row.priorityText);
+    const status = statusFromTemplate(row, priorityLevel);
+    const requestDate = toTemplateDateTime(row.requestDate, 9) ?? day(-4, 9);
+    const targetDueDate = toTemplateDateTime(row.targetDueDate, 18);
+    const completedAt = toTemplateDateTime(row.completedAt, 17);
+    const mechanic = row.mechanicName ? users.find((user) => user.name === row.mechanicName) : undefined;
+    const assignedMechanic = mechanic ? userRef(mechanic) : null;
+    const actionTaken = row.actionTaken || (status === WorkOrderStatus.FINAL_COMPLETED ? "템플릿 완료 처리" : "");
+    const diagnosisResult = row.memo || row.actionTaken || "";
+    const isCompleted = status === WorkOrderStatus.FINAL_COMPLETED;
+    const isTemplateDelayed = status === WorkOrderStatus.DELAYED || Boolean(targetDueDate && new Date(targetDueDate).getTime() < baseDate.getTime() && !completedAt);
+
+    return {
+      id: `template-work-order-${row.sourceRow}`,
+      requestNo: `${compactDate(row.requestDate)}-${String(row.sourceRow).padStart(3, "0")}`,
+      customer: { id: stableId("template-customer", row.customerName), name: row.customerName },
+      site: { id: stableId("template-site", `${row.customerName}-${pick(master ?? {}, ["배치장소"]) || row.customerName}`), name: pick(master ?? {}, ["배치장소"]) || row.customerName },
+      equipment: {
+        id: `template-equipment-${equipmentCode || row.sourceRow}`,
+        normalizedNo: equipmentCode || equipmentDigits || row.equipmentInput,
+        equipmentNo: pick(master ?? {}, ["장비 No"]) || row.equipmentInput,
+        placementNo: pick(master ?? {}, ["배치No"]) || row.equipmentInput,
+        modelName: pick(master ?? {}, ["모델명"]) || row.modelName,
+        serialNo: pick(master ?? {}, ["차대번호"]) || row.serialNo,
+        tonnage: pick(master ?? {}, ["톤수"]),
+        maker: pick(master ?? {}, ["제작처"]),
+        vehicleRegistrationNo: pick(master ?? {}, ["차량등록 No."]),
+        customer: { name: pick(master ?? {}, ["사업장", "계약처"]) || row.customerName },
+        site: { name: pick(master ?? {}, ["배치장소"]) || row.customerName }
+      },
+      equipmentInput: row.equipmentInput,
+      equipmentNoNormalized: equipmentCode || equipmentDigits || row.equipmentInput,
+      requestDate,
+      requestedAt: requestDate,
+      contactPhone: "",
+      faultDescription: row.faultDescription,
+      equipmentType: EquipmentType.RENTAL,
+      priorityLevel,
+      status,
+      targetDueDate,
+      assignedMechanic,
+      resultType: isCompleted ? WorkResultType.COMPLETED : WorkResultType.UNKNOWN,
+      diagnosisResult,
+      actionTaken,
+      memo: row.memo || templateSourceMemo(row),
+      mechanicReportedAt: isCompleted ? completedAt : null,
+      adminApprovedAt: isCompleted ? completedAt : null,
+      finalCompletedAt: isCompleted ? completedAt : null,
+      isDelayed: isTemplateDelayed,
+      comments: row.memo
+        ? [{ id: `template-comment-${row.sourceRow}`, body: row.memo, createdAt: requestDate, author: { name: "템플릿" } }]
+        : [],
+      reports: isCompleted
+        ? [
+            {
+              id: `template-report-${row.sourceRow}`,
+              resultType: WorkResultType.COMPLETED,
+              diagnosisResult: diagnosisResult || row.faultDescription,
+              actionTaken,
+              submittedAt: completedAt ?? requestDate
+            }
+          ]
+        : [],
+      workOrderAttachments: [],
+      targetChangeRequests: [],
+      statusHistories: [],
+      assignmentHistories: []
+    };
+  });
+}
+
+function addTemplateMechanicUsers(users: DemoUser[], rows: DailyStatusTemplateRow[]) {
+  const existing = new Set(users.map((user) => user.name));
+  const names = Array.from(new Set(rows.map((row) => row.mechanicName.trim()).filter(Boolean)));
+  names.forEach((name, index) => {
+    if (existing.has(name)) return;
+    users.push({
+      id: stableId("template-mechanic", name),
+      loginId: `template.mech.${String(index + 1).padStart(2, "0")}`,
+      name,
+      title: "정비사",
+      team: "템플릿 정비팀",
+      password: "Mech!2026Test",
+      roles: [RoleCode.MECHANIC],
+      mustChangePassword: false,
+      isActive: true
+    });
+    existing.add(name);
+  });
+}
+
+function normalizeTemplateEquipment(value: string) {
+  const cleaned = value.replace(/^#+/, "").replace(/호기?|관리/g, "").trim();
+  return cleaned || numberFromEquipmentText(value);
+}
+
+function normalizeLookup(value: string) {
+  return value.replace(/\s+/g, "").toLowerCase();
+}
+
+function compactDate(value: string) {
+  return value.replace(/\D/g, "").slice(0, 8) || "20260605";
+}
+
+function stableId(prefix: string, value: string) {
+  const hex = Buffer.from(value || prefix, "utf8").toString("hex").slice(0, 24);
+  return `${prefix}-${hex || "unknown"}`;
+}
+
+function toTemplateDateTime(value: string, hour: number) {
+  const date = parseTemplateDate(value);
+  if (!date) return null;
+  date.setHours(hour, 0, 0, 0);
+  return date.toISOString();
+}
+
+function parseTemplateDate(value: string) {
+  const match = value.match(/(\d{4})[-.](\d{1,2})[-.](\d{1,2})/);
+  if (!match) return null;
+  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+}
+
+function priorityFromTemplate(value: string) {
+  if (/외주/.test(value)) return PriorityLevel.OUTSOURCE;
+  if (/#?\s*1/.test(value)) return PriorityLevel.P1;
+  if (/#?\s*2/.test(value)) return PriorityLevel.P2;
+  if (/#?\s*3/.test(value)) return PriorityLevel.P3;
+  return PriorityLevel.UNSET;
+}
+
+function statusFromTemplate(row: DailyStatusTemplateRow, priorityLevel: PriorityLevel) {
+  if (row.completedAt) return WorkOrderStatus.FINAL_COMPLETED;
+  if (priorityLevel === PriorityLevel.OUTSOURCE || /외주|창원중기|삼성중기|현승정비/.test(row.memo)) return WorkOrderStatus.ON_HOLD;
+  if (!row.mechanicName) return WorkOrderStatus.UNASSIGNED;
+  if (/부품|배터리|수리\s*대기|대기중|입고/.test(row.memo)) return WorkOrderStatus.PART_WAITING;
+  const targetDate = parseTemplateDate(row.targetDueDate);
+  if (targetDate && targetDate.getTime() < baseDate.getTime()) return WorkOrderStatus.DELAYED;
+  return WorkOrderStatus.ASSIGNED;
+}
+
+function templateSourceMemo(row: DailyStatusTemplateRow) {
+  return `${row.section === "pending" ? "미결 목록" : "일일 진행업무"} · 구분 ${row.category} · Template row ${row.sourceRow}`;
+}
+
+async function makeStore(): Promise<DemoStore> {
   const users: DemoUser[] = [
     {
       id: "demo-super-admin",
@@ -303,378 +469,11 @@ function makeStore(): DemoStore {
     }
   ];
 
-  const [superAdmin, executive, admin, receptionist, jegal, jung, kimYh, kimJb, leeSj] = users;
-  const workOrders: DemoWorkOrder[] = [
-    {
-      id: "demo-work-order-001",
-      requestNo: "20260608-001",
-      customer: { id: "demo-customer-taesung", name: "태성이엔지" },
-      site: { id: "demo-site-taesung-cyl", name: "CYL 도장물류" },
-      equipment: makeEquipment("290", "태성이엔지", "CYL 도장물류", "GTS25DE", "GTS232D15859820KF"),
-      equipmentInput: "290호기",
-      equipmentNoNormalized: "290",
-      requestDate: day(0, 8),
-      requestedAt: day(0, 8),
-      contactPhone: "010-2625-0987",
-      faultDescription: "시동은 걸리지만 지게차 사용 중 간헐적으로 출력이 떨어짐",
-      equipmentType: EquipmentType.RENTAL,
-      priorityLevel: PriorityLevel.P1,
-      status: WorkOrderStatus.ASSIGNED,
-      targetDueDate: day(0, 18),
-      assignedMechanic: userRef(jegal),
-      resultType: WorkResultType.UNKNOWN,
-      memo: "오전 중 현장 진입 가능",
-      comments: [{ id: "demo-comment-001", body: "현장 담당자와 10시에 통화 완료", createdAt: day(0, 9), author: userRef(receptionist) }],
-      reports: [],
-      workOrderAttachments: [],
-      targetChangeRequests: [],
-      statusHistories: [],
-      assignmentHistories: []
-    },
-    {
-      id: "demo-work-order-002",
-      requestNo: "20260608-002",
-      customer: { id: "demo-customer-mir", name: "미르푸드" },
-      site: { id: "demo-site-mir-cold", name: "냉동창고 B동" },
-      equipment: makeEquipment("118", "미르푸드", "냉동창고 B동", "D25S-9", "DS9B11877341", "3.0T"),
-      equipmentInput: "118",
-      equipmentNoNormalized: "118",
-      requestDate: day(0, 9),
-      requestedAt: day(0, 9),
-      contactPhone: "010-4511-1039",
-      faultDescription: "유압 라인 누유, 팔레트 상차 중 오일 자국 발생",
-      equipmentType: EquipmentType.RENTAL,
-      priorityLevel: PriorityLevel.P1,
-      status: WorkOrderStatus.IN_PROGRESS,
-      targetDueDate: day(0, 17),
-      assignedMechanic: userRef(jung),
-      resultType: WorkResultType.UNKNOWN,
-      memo: "냉동창고 작업으로 안전장비 지참",
-      comments: [{ id: "demo-comment-002", body: "부품차량 동행 필요", createdAt: day(0, 10), author: userRef(admin) }],
-      reports: [],
-      workOrderAttachments: [],
-      targetChangeRequests: [],
-      statusHistories: [],
-      assignmentHistories: []
-    },
-    {
-      id: "demo-work-order-003",
-      requestNo: "20260607-004",
-      customer: { id: "demo-customer-samwon", name: "삼원테크" },
-      site: { id: "demo-site-samwon-a", name: "A동 출하장" },
-      equipment: makeEquipment("041", "삼원테크", "A동 출하장", "CPCD30", "CP30A0419921", "3.0T"),
-      equipmentInput: "041호",
-      equipmentNoNormalized: "041",
-      requestDate: day(-1, 13),
-      requestedAt: day(-1, 13),
-      contactPhone: "010-7781-2204",
-      faultDescription: "브레이크 밀림 증상, 경사로 정차 시 위험",
-      equipmentType: EquipmentType.RENTAL,
-      priorityLevel: PriorityLevel.P2,
-      status: WorkOrderStatus.REPORT_SUBMITTED,
-      targetDueDate: day(0, 12),
-      assignedMechanic: userRef(kimYh),
-      resultType: WorkResultType.COMPLETED,
-      diagnosisResult: "브레이크 오일 부족 및 라이닝 편마모 확인",
-      actionTaken: "브레이크 오일 보충, 라이닝 조정, 시운전 완료",
-      mechanicReportedAt: day(0, 11),
-      memo: "관리자 최종 승인 대기",
-      comments: [],
-      reports: [
-        {
-          id: "demo-report-003",
-          resultType: WorkResultType.COMPLETED,
-          diagnosisResult: "브레이크 오일 부족 및 라이닝 편마모 확인",
-          actionTaken: "브레이크 오일 보충, 라이닝 조정, 시운전 완료",
-          submittedAt: day(0, 11)
-        }
-      ],
-      workOrderAttachments: [],
-      targetChangeRequests: [],
-      statusHistories: [],
-      assignmentHistories: []
-    },
-    {
-      id: "demo-work-order-004",
-      requestNo: "20260607-003",
-      customer: { id: "demo-customer-donghae", name: "동해물류" },
-      site: { id: "demo-site-donghae-main", name: "1창고 상차장" },
-      equipment: makeEquipment("503", "동해물류", "1창고 상차장", "HDF25", "HDF5037712"),
-      equipmentInput: "503",
-      equipmentNoNormalized: "503",
-      requestDate: day(-1, 10),
-      requestedAt: day(-1, 10),
-      contactPhone: "010-9033-1288",
-      faultDescription: "배터리 단자 접촉 불량으로 시동 지연",
-      equipmentType: EquipmentType.CUSTOMER_OWNED,
-      priorityLevel: PriorityLevel.P2,
-      status: WorkOrderStatus.FINAL_COMPLETED,
-      targetDueDate: day(-1, 18),
-      assignedMechanic: userRef(jegal),
-      resultType: WorkResultType.COMPLETED,
-      diagnosisResult: "배터리 단자 산화 및 고정 불량",
-      actionTaken: "단자 세척, 터미널 교체, 충전 전압 확인",
-      mechanicReportedAt: day(-1, 15),
-      adminApprovedAt: day(-1, 16),
-      finalCompletedAt: day(-1, 16),
-      memo: "고객 확인 서명 완료",
-      comments: [],
-      reports: [
-        {
-          id: "demo-report-004",
-          resultType: WorkResultType.COMPLETED,
-          diagnosisResult: "배터리 단자 산화 및 고정 불량",
-          actionTaken: "단자 세척, 터미널 교체, 충전 전압 확인",
-          submittedAt: day(-1, 15)
-        }
-      ],
-      workOrderAttachments: [],
-      targetChangeRequests: [],
-      statusHistories: [],
-      assignmentHistories: []
-    },
-    {
-      id: "demo-work-order-005",
-      requestNo: "20260606-006",
-      customer: { id: "demo-customer-daehan", name: "대한제지" },
-      site: { id: "demo-site-daehan-2", name: "2공장 원지창고" },
-      equipment: makeEquipment("075", "대한제지", "2공장 원지창고", "FD25T", "FD25T0755580"),
-      equipmentInput: "075호기",
-      equipmentNoNormalized: "075",
-      requestDate: day(-2, 14),
-      requestedAt: day(-2, 14),
-      contactPhone: "010-5779-2200",
-      faultDescription: "월간 예방점검, 마스트 체인 장력 확인 요청",
-      equipmentType: EquipmentType.RENTAL,
-      priorityLevel: PriorityLevel.P3,
-      status: WorkOrderStatus.ASSIGNED,
-      targetDueDate: day(2, 16),
-      assignedMechanic: userRef(kimJb),
-      resultType: WorkResultType.UNKNOWN,
-      memo: "정기점검 대상",
-      comments: [],
-      reports: [],
-      workOrderAttachments: [],
-      targetChangeRequests: [],
-      statusHistories: [],
-      assignmentHistories: []
-    },
-    {
-      id: "demo-work-order-006",
-      requestNo: "20260606-005",
-      customer: { id: "demo-customer-seojin", name: "서진케미칼" },
-      site: { id: "demo-site-seojin", name: "혼합동" },
-      equipment: makeEquipment("620", "서진케미칼", "혼합동", "E30H", "E30H6205570", "3.0T"),
-      equipmentInput: "620 전동",
-      equipmentNoNormalized: "620",
-      requestDate: day(-2, 11),
-      requestedAt: day(-2, 11),
-      contactPhone: "010-6772-3301",
-      faultDescription: "인버터 경고등 점등, 제조사 점검 필요",
-      equipmentType: EquipmentType.RENTAL,
-      priorityLevel: PriorityLevel.OUTSOURCE,
-      status: WorkOrderStatus.ON_HOLD,
-      targetDueDate: day(3, 12),
-      assignedMechanic: userRef(leeSj),
-      resultType: WorkResultType.UNKNOWN,
-      memo: "외주 업체 일정 조율 중",
-      comments: [{ id: "demo-comment-006", body: "현대서비스 6월 11일 방문 예정", createdAt: day(-1, 17), author: userRef(admin) }],
-      reports: [],
-      workOrderAttachments: [],
-      targetChangeRequests: [],
-      statusHistories: [],
-      assignmentHistories: []
-    },
-    {
-      id: "demo-work-order-007",
-      requestNo: "20260605-007",
-      customer: { id: "demo-customer-haesol", name: "해솔화학" },
-      site: { id: "demo-site-haesol", name: "원료창고" },
-      equipment: makeEquipment("311", "해솔화학", "원료창고", "GTS30D", "GTS3119918", "3.0T"),
-      equipmentInput: "311",
-      equipmentNoNormalized: "311",
-      requestDate: day(-3, 16),
-      requestedAt: day(-3, 16),
-      contactPhone: "010-4491-8872",
-      faultDescription: "냉각수 누수 재발, 야간작업 전 조치 필요",
-      equipmentType: EquipmentType.RENTAL,
-      priorityLevel: PriorityLevel.P1,
-      status: WorkOrderStatus.DELAYED,
-      targetDueDate: day(-1, 18),
-      assignedMechanic: userRef(kimYh),
-      resultType: WorkResultType.UNKNOWN,
-      isDelayed: true,
-      memo: "고객 생산 일정으로 작업 지연",
-      comments: [{ id: "demo-comment-007", body: "부품 입고 확인 후 재방문", createdAt: day(-1, 10), author: userRef(kimYh) }],
-      reports: [],
-      workOrderAttachments: [],
-      targetChangeRequests: [
-        {
-          id: "demo-target-007",
-          currentDate: day(-1, 18),
-          requestedDate: day(1, 14),
-          reason: "부품 입고 지연",
-          status: "REQUESTED",
-          createdAt: day(0, 9)
-        }
-      ],
-      statusHistories: [],
-      assignmentHistories: []
-    },
-    {
-      id: "demo-work-order-008",
-      requestNo: "20260605-003",
-      customer: { id: "demo-customer-woorim", name: "우림패키지" },
-      site: { id: "demo-site-woorim", name: "완제품 창고" },
-      equipment: makeEquipment("222", "우림패키지", "완제품 창고", "CPCD25", "CP25A2223310"),
-      equipmentInput: "222호",
-      equipmentNoNormalized: "222",
-      requestDate: day(-3, 9),
-      requestedAt: day(-3, 9),
-      contactPhone: "010-8802-5520",
-      faultDescription: "경음기 미작동 및 후방등 교체",
-      equipmentType: EquipmentType.CUSTOMER_OWNED,
-      priorityLevel: PriorityLevel.P3,
-      status: WorkOrderStatus.FINAL_COMPLETED,
-      targetDueDate: day(-2, 18),
-      assignedMechanic: userRef(jung),
-      resultType: WorkResultType.COMPLETED,
-      diagnosisResult: "후방등 배선 단선, 경음기 릴레이 접점 불량",
-      actionTaken: "배선 보수, 릴레이 교체, 작동 확인",
-      mechanicReportedAt: day(-2, 11),
-      adminApprovedAt: day(-2, 13),
-      finalCompletedAt: day(-2, 13),
-      comments: [],
-      reports: [
-        {
-          id: "demo-report-008",
-          resultType: WorkResultType.COMPLETED,
-          diagnosisResult: "후방등 배선 단선, 경음기 릴레이 접점 불량",
-          actionTaken: "배선 보수, 릴레이 교체, 작동 확인",
-          submittedAt: day(-2, 11)
-        }
-      ],
-      workOrderAttachments: [],
-      targetChangeRequests: [],
-      statusHistories: [],
-      assignmentHistories: []
-    },
-    {
-      id: "demo-work-order-009",
-      requestNo: "20260604-008",
-      customer: { id: "demo-customer-ace", name: "에이스전자" },
-      site: { id: "demo-site-ace", name: "SMT 라인" },
-      equipment: makeEquipment("087", "에이스전자", "SMT 라인", "BR20S", "BR20S0871300", "2.0T"),
-      equipmentInput: "087 리치",
-      equipmentNoNormalized: "087",
-      requestDate: day(-4, 15),
-      requestedAt: day(-4, 15),
-      contactPhone: "010-5532-4490",
-      faultDescription: "조향 센서 오류, 부품 재고 확인 필요",
-      equipmentType: EquipmentType.RENTAL,
-      priorityLevel: PriorityLevel.P2,
-      status: WorkOrderStatus.PART_WAITING,
-      targetDueDate: day(1, 18),
-      assignedMechanic: userRef(leeSj),
-      resultType: WorkResultType.UNKNOWN,
-      memo: "센서 입고 대기",
-      comments: [],
-      reports: [],
-      workOrderAttachments: [],
-      targetChangeRequests: [],
-      statusHistories: [],
-      assignmentHistories: []
-    },
-    {
-      id: "demo-work-order-010",
-      requestNo: "20260608-003",
-      customer: { id: "demo-customer-saebit", name: "새빛산업" },
-      site: { id: "demo-site-saebit", name: "신규 임대 현장" },
-      equipment: makeEquipment("144", "새빛산업", "신규 임대 현장", "GTS25D", "GTS1447720"),
-      equipmentInput: "144",
-      equipmentNoNormalized: "144",
-      requestDate: day(0, 11),
-      requestedAt: day(0, 11),
-      contactPhone: "010-6013-1144",
-      faultDescription: "신규 접수: 시동 직후 경고등 점등, 배정 대기",
-      equipmentType: EquipmentType.RENTAL,
-      priorityLevel: PriorityLevel.P2,
-      status: WorkOrderStatus.UNASSIGNED,
-      targetDueDate: day(1, 18),
-      assignedMechanic: null,
-      resultType: WorkResultType.UNKNOWN,
-      memo: "관리자 배정 필요",
-      comments: [],
-      reports: [],
-      workOrderAttachments: [],
-      targetChangeRequests: [],
-      statusHistories: [],
-      assignmentHistories: []
-    },
-    {
-      id: "demo-work-order-011",
-      requestNo: "20260607-009",
-      customer: { id: "demo-customer-kumkang", name: "금강철강" },
-      site: { id: "demo-site-kumkang", name: "절단라인" },
-      equipment: makeEquipment("019", "금강철강", "절단라인", "FD30T", "FD30T0191290", "3.0T"),
-      equipmentInput: "019",
-      equipmentNoNormalized: "019",
-      requestDate: day(-1, 16),
-      requestedAt: day(-1, 16),
-      contactPhone: "010-7366-2002",
-      faultDescription: "마스트 상승 불량, 임시 조치 후 재방문 필요",
-      equipmentType: EquipmentType.RENTAL,
-      priorityLevel: PriorityLevel.P1,
-      status: WorkOrderStatus.REPORT_SUBMITTED,
-      targetDueDate: day(0, 18),
-      assignedMechanic: userRef(jegal),
-      resultType: WorkResultType.TEMPORARY_ACTION,
-      diagnosisResult: "리프트 실린더 씰 마모 의심",
-      actionTaken: "누유 부위 세척 및 임시 보강, 씰 키트 교체 필요",
-      mechanicReportedAt: day(0, 14),
-      memo: "관리자 승인 시 임시 조치 KPI로 분류",
-      comments: [],
-      reports: [
-        {
-          id: "demo-report-011",
-          resultType: WorkResultType.TEMPORARY_ACTION,
-          diagnosisResult: "리프트 실린더 씰 마모 의심",
-          actionTaken: "누유 부위 세척 및 임시 보강, 씰 키트 교체 필요",
-          submittedAt: day(0, 14)
-        }
-      ],
-      workOrderAttachments: [],
-      targetChangeRequests: [],
-      statusHistories: [],
-      assignmentHistories: []
-    },
-    {
-      id: "demo-work-order-012",
-      requestNo: "20260606-010",
-      customer: { id: "demo-customer-koreacold", name: "한국냉장" },
-      site: { id: "demo-site-koreacold", name: "제2냉동동" },
-      equipment: makeEquipment("655", "한국냉장", "제2냉동동", "E20R", "E20R6557712", "2.0T"),
-      equipmentInput: "655",
-      equipmentNoNormalized: "655",
-      requestDate: day(-2, 17),
-      requestedAt: day(-2, 17),
-      contactPhone: "010-3189-6500",
-      faultDescription: "주행 중 소음 발생, 베어링 점검 요청",
-      equipmentType: EquipmentType.RENTAL,
-      priorityLevel: PriorityLevel.P3,
-      status: WorkOrderStatus.ASSIGNED,
-      targetDueDate: day(4, 12),
-      assignedMechanic: userRef(leeSj),
-      resultType: WorkResultType.UNKNOWN,
-      comments: [],
-      reports: [],
-      workOrderAttachments: [],
-      targetChangeRequests: [],
-      statusHistories: [],
-      assignmentHistories: []
-    }
-  ];
-
+  const templateRows = await readDailyStatusRows().catch(() => []);
+  addTemplateMechanicUsers(users, templateRows);
+  const [superAdmin, executive, admin, receptionist] = users;
+  const templateWorkOrders = await buildTemplateWorkOrders(users, templateRows);
+  const workOrders = templateWorkOrders;
   const store = {
     users,
     workOrders,
@@ -693,13 +492,14 @@ function makeStore(): DemoStore {
   return store;
 }
 
-export function demoStore() {
+export async function demoStore() {
   globalForDemo.demoStore ??= makeStore();
   return globalForDemo.demoStore;
 }
 
-export function demoLogin(loginId: string, password: string) {
-  const user = demoStore().users.find((row) => row.loginId === loginId && row.password === password && row.isActive);
+export async function demoLogin(loginId: string, password: string) {
+  const store = await demoStore();
+  const user = store.users.find((row) => row.loginId === loginId && row.password === password && row.isActive);
   if (!user) return null;
   return {
     id: user.id,
@@ -710,15 +510,17 @@ export function demoLogin(loginId: string, password: string) {
   };
 }
 
-export function demoUsers() {
-  return demoStore().users.map(publicUser);
+export async function demoUsers() {
+  const store = await demoStore();
+  return store.users.map(publicUser);
 }
 
-export function demoAuditLogs() {
-  return demoStore().auditLogs;
+export async function demoAuditLogs() {
+  const store = await demoStore();
+  return store.auditLogs;
 }
 
-export function demoCreateUser(input: {
+export async function demoCreateUser(input: {
   loginId: string;
   name: string;
   title?: string;
@@ -728,7 +530,7 @@ export function demoCreateUser(input: {
   roleCodes: RoleCode[];
   temporaryPassword: string;
 }) {
-  const store = demoStore();
+  const store = await demoStore();
   const user: DemoUser = {
     id: `demo-user-${Date.now()}`,
     loginId: input.loginId,
@@ -747,8 +549,9 @@ export function demoCreateUser(input: {
   return publicUser(user);
 }
 
-export function demoDashboardSummary() {
-  const rows = demoStore().workOrders;
+export async function demoDashboardSummary() {
+  const store = await demoStore();
+  const rows = store.workOrders;
   const closedStatuses: WorkOrderStatus[] = [WorkOrderStatus.ARCHIVED, WorkOrderStatus.CANCELLED];
   const plannedStatuses: WorkOrderStatus[] = [
     WorkOrderStatus.ASSIGNED,
@@ -773,15 +576,15 @@ export function demoDashboardSummary() {
   };
 }
 
-export function demoWorkOrders() {
-  const store = demoStore();
+export async function demoWorkOrders() {
+  const store = await demoStore();
   for (const row of store.workOrders) {
     row.approvalLine ??= makeDemoApprovalLine(row, store);
   }
   return store.workOrders;
 }
 
-export function demoCreateWorkOrder(input: {
+export async function demoCreateWorkOrder(input: {
   customerName: string;
   siteName?: string;
   equipmentInput: string;
@@ -793,7 +596,7 @@ export function demoCreateWorkOrder(input: {
   targetDueDate?: string;
   memo?: string;
 }) {
-  const store = demoStore();
+  const store = await demoStore();
   const normalized = normalizeEquipmentKeyword(input.equipmentInput);
   const existingEquipment = store.workOrders.find((row) => row.equipmentNoNormalized === normalized)?.equipment;
   const targetDueDate = input.targetDueDate
@@ -836,9 +639,10 @@ export function demoCreateWorkOrder(input: {
   return row;
 }
 
-export function demoEquipmentLookup(keyword: string) {
+export async function demoEquipmentLookup(keyword: string) {
   const normalized = normalizeEquipmentKeyword(keyword);
-  const rows = demoStore().workOrders.filter(
+  const store = await demoStore();
+  const rows = store.workOrders.filter(
     (row) =>
       row.equipmentNoNormalized === normalized ||
       row.equipment.normalizedNo === normalized ||
@@ -852,9 +656,9 @@ export function demoEquipmentLookup(keyword: string) {
   };
 }
 
-export function demoAssignWorkOrder(id: string, assignedMechanicId: string) {
-  const store = demoStore();
-  const row = findWorkOrder(id);
+export async function demoAssignWorkOrder(id: string, assignedMechanicId: string) {
+  const store = await demoStore();
+  const row = findWorkOrder(store, id);
   const mechanic = store.users.find((user) => user.id === assignedMechanicId);
   if (!mechanic) return null;
   row.assignedMechanic = userRef(mechanic);
@@ -872,16 +676,16 @@ export function demoAssignWorkOrder(id: string, assignedMechanicId: string) {
   return row;
 }
 
-export function demoStartWorkOrder(id: string) {
-  const store = demoStore();
-  const row = findWorkOrder(id);
+export async function demoStartWorkOrder(id: string) {
+  const store = await demoStore();
+  const row = findWorkOrder(store, id);
   row.status = WorkOrderStatus.IN_PROGRESS;
   row.statusHistories.unshift({ id: `demo-status-${Date.now()}`, toStatus: row.status, reason: "작업 시작", createdAt: new Date().toISOString() });
   audit(store, "work_order.start", "workOrder", row.id, row);
   return row;
 }
 
-export function demoSubmitReport(
+export async function demoSubmitReport(
   id: string,
   input: {
     resultType: WorkResultType;
@@ -892,8 +696,8 @@ export function demoSubmitReport(
     temporaryFollowupContent?: string;
   }
 ) {
-  const store = demoStore();
-  const row = findWorkOrder(id);
+  const store = await demoStore();
+  const row = findWorkOrder(store, id);
   const report = {
     id: `demo-report-${Date.now()}`,
     resultType: input.resultType,
@@ -913,9 +717,9 @@ export function demoSubmitReport(
   return { report, workOrder: row };
 }
 
-export function demoSetApprovalLine(id: string, input: { adminApproverId?: string; executiveApproverId?: string }) {
-  const store = demoStore();
-  const row = findWorkOrder(id);
+export async function demoSetApprovalLine(id: string, input: { adminApproverId?: string; executiveApproverId?: string }) {
+  const store = await demoStore();
+  const row = findWorkOrder(store, id);
   const admin = store.users.find((user) => user.id === input.adminApproverId) ?? store.users.find((user) => user.loginId === "ko.ms");
   const executive = store.users.find((user) => user.id === input.executiveApproverId) ?? store.users.find((user) => user.loginId === "kim.ms");
   row.approvalLine = makeDemoApprovalLine(row, store, admin, executive);
@@ -923,13 +727,13 @@ export function demoSetApprovalLine(id: string, input: { adminApproverId?: strin
   return row;
 }
 
-export function demoApproveWorkOrder(
+export async function demoApproveWorkOrder(
   id: string,
   input?: { memo?: string; kpiExcluded?: boolean; kpiExclusionReason?: string },
   actor?: { id: string; name: string; roles: RoleCode[] }
 ) {
-  const store = demoStore();
-  const row = findWorkOrder(id);
+  const store = await demoStore();
+  const row = findWorkOrder(store, id);
   row.approvalLine ??= makeDemoApprovalLine(row, store);
   markMechanicStep(row);
   const step = row.approvalLine.find((item) => item.status === "PENDING" && item.role !== "MECHANIC");
@@ -969,9 +773,9 @@ export function demoApproveWorkOrder(
   return row;
 }
 
-export function demoRejectWorkOrder(id: string, reason: string) {
-  const store = demoStore();
-  const row = findWorkOrder(id);
+export async function demoRejectWorkOrder(id: string, reason: string) {
+  const store = await demoStore();
+  const row = findWorkOrder(store, id);
   row.status = WorkOrderStatus.REJECTED;
   row.comments.unshift({
     id: `demo-comment-${Date.now()}`,
@@ -984,9 +788,9 @@ export function demoRejectWorkOrder(id: string, reason: string) {
   return row;
 }
 
-export function demoUpdateTarget(id: string, targetDueDate: string, reason?: string) {
-  const store = demoStore();
-  const row = findWorkOrder(id);
+export async function demoUpdateTarget(id: string, targetDueDate: string, reason?: string) {
+  const store = await demoStore();
+  const row = findWorkOrder(store, id);
   const oldDate = row.targetDueDate;
   row.targetDueDate = new Date(targetDueDate).toISOString();
   row.targetChangeRequests.unshift({
@@ -1001,9 +805,9 @@ export function demoUpdateTarget(id: string, targetDueDate: string, reason?: str
   return row;
 }
 
-export function demoTargetChangeRequest(id: string, requestedDate: string, reason: string) {
-  const store = demoStore();
-  const row = findWorkOrder(id);
+export async function demoTargetChangeRequest(id: string, requestedDate: string, reason: string) {
+  const store = await demoStore();
+  const row = findWorkOrder(store, id);
   const request = {
     id: `demo-target-request-${Date.now()}`,
     currentDate: row.targetDueDate,
@@ -1017,9 +821,10 @@ export function demoTargetChangeRequest(id: string, requestedDate: string, reaso
   return request;
 }
 
-export function demoMechanicKpi() {
-  const rows = demoStore().workOrders;
-  return demoStore().users
+export async function demoMechanicKpi() {
+  const store = await demoStore();
+  const rows = store.workOrders;
+  return store.users
     .filter((user) => user.roles.includes(RoleCode.MECHANIC))
     .map((user) => {
       const assignedRows = rows.filter((row) => row.assignedMechanic?.id === user.id);
@@ -1040,9 +845,10 @@ export function demoMechanicKpi() {
     });
 }
 
-export function demoPriorityKpi() {
+export async function demoPriorityKpi() {
+  const store = await demoStore();
   return [PriorityLevel.P1, PriorityLevel.P2, PriorityLevel.P3, PriorityLevel.OUTSOURCE, PriorityLevel.UNSET].map((priority) => {
-    const rows = demoStore().workOrders.filter((row) => row.priorityLevel === priority);
+    const rows = store.workOrders.filter((row) => row.priorityLevel === priority);
     const completed = rows.filter((row) => row.status === WorkOrderStatus.FINAL_COMPLETED).length;
     const pending = rows.filter((row) => row.status !== WorkOrderStatus.FINAL_COMPLETED).length;
     const delayed = rows.filter(isDelayed).length;
@@ -1057,8 +863,8 @@ export function demoPriorityKpi() {
   });
 }
 
-function findWorkOrder(id: string) {
-  const row = demoStore().workOrders.find((workOrder) => workOrder.id === id);
+function findWorkOrder(store: DemoStore, id: string) {
+  const row = store.workOrders.find((workOrder) => workOrder.id === id);
   if (!row) throw new Error("Demo work order not found.");
   return row;
 }

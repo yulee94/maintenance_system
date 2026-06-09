@@ -20,7 +20,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     const { id } = await context.params;
     const input = await readJson(request, schema);
     if (appEnv.demoMode) {
-      const row = demoAssignWorkOrder(id, input.assignedMechanicId);
+      const row = await demoAssignWorkOrder(id, input.assignedMechanicId);
       if (!row) throw new ApiError(404, "정비사를 찾을 수 없습니다.");
       return ok(row);
     }

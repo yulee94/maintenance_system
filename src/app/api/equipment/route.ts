@@ -68,7 +68,7 @@ export async function GET(request: NextRequest) {
 }
 
 async function demoEquipmentAssets() {
-  const orders = demoWorkOrders();
+  const orders = await demoWorkOrders();
   const rows = await readMasterListRows().catch(() => []);
   const assets = new Map<string, EquipmentAssetInput>();
 

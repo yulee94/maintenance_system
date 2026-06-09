@@ -12,7 +12,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
   try {
     const user = await requireUser(request);
     const { id } = await context.params;
-    if (appEnv.demoMode) return ok(demoStartWorkOrder(id));
+    if (appEnv.demoMode) return ok(await demoStartWorkOrder(id));
     const before = await prisma.workOrder.findUnique({ where: { id } });
     if (!before) throw new ApiError(404, "정비건을 찾을 수 없습니다.");
     const row = await prisma.workOrder.update({

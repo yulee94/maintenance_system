@@ -17,7 +17,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     const user = await requireUser(request);
     const { id } = await context.params;
     const input = await readJson(request, schema);
-    if (appEnv.demoMode) return created(demoTargetChangeRequest(id, input.requestedDate, input.reason));
+    if (appEnv.demoMode) return created(await demoTargetChangeRequest(id, input.requestedDate, input.reason));
     const workOrder = await prisma.workOrder.findUnique({ where: { id } });
     if (!workOrder) throw new ApiError(404, "정비건을 찾을 수 없습니다.");
     const requestedDate = parseDateInput(input.requestedDate);

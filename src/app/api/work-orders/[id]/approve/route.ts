@@ -20,7 +20,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     const user = await requireUser(request, [RoleCode.ADMIN, RoleCode.EXECUTIVE]);
     const { id } = await context.params;
     const input = await readJson(request, schema);
-    if (appEnv.demoMode) return ok(demoApproveWorkOrder(id, input, user));
+    if (appEnv.demoMode) return ok(await demoApproveWorkOrder(id, input, user));
     const before = await prisma.workOrder.findUnique({
       where: { id },
       include: {

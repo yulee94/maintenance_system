@@ -9,7 +9,7 @@ import { demoPriorityKpi } from "@/lib/demo";
 export async function GET(request: NextRequest) {
   try {
     await requireUser(request, [RoleCode.ADMIN, RoleCode.EXECUTIVE]);
-    if (appEnv.demoMode) return ok(demoPriorityKpi());
+    if (appEnv.demoMode) return ok(await demoPriorityKpi());
     return ok(await getPriorityKpi());
   } catch (error) {
     return handleApiError(error);

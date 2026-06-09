@@ -22,7 +22,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     const user = await requireUser(request);
     const { id } = await context.params;
     const input = await readJson(request, schema);
-    if (appEnv.demoMode) return created(demoSubmitReport(id, input));
+    if (appEnv.demoMode) return created(await demoSubmitReport(id, input));
     const before = await prisma.workOrder.findUnique({ where: { id } });
     if (!before) throw new ApiError(404, "정비건을 찾을 수 없습니다.");
     const followupDate = parseDateInput(input.temporaryFollowupDueDate);

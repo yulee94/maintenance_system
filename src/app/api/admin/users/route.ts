@@ -32,7 +32,7 @@ function assertCanGrantRoles(actorRoles: RoleCode[], roleCodes: RoleCode[]) {
 export async function GET(request: NextRequest) {
   try {
     await requireUser(request, [RoleCode.ADMIN]);
-    if (appEnv.demoMode) return ok(demoUsers());
+    if (appEnv.demoMode) return ok(await demoUsers());
     const rows = await prisma.user.findMany({
       include: {
         roles: { include: { role: true } },
@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
     const input = await readJson(request, createSchema);
     assertCanGrantRoles(user.roles, input.roleCodes);
     if (appEnv.demoMode) {
-      return created(demoCreateUser(input));
+      return created(await demoCreateUser(input));
     }
 
     const row = await prisma.user.create({

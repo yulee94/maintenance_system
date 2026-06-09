@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
     await requireUser(request);
     const keyword = request.nextUrl.searchParams.get("keyword");
     if (!keyword) throw new ApiError(422, "keyword is required.");
-    if (appEnv.demoMode) return ok(demoEquipmentLookup(keyword));
+    if (appEnv.demoMode) return ok(await demoEquipmentLookup(keyword));
     const equipment = await findEquipmentByKeyword(keyword);
     const normalized = equipment?.normalizedNo ?? normalizeEquipmentKeyword(keyword);
     const duplicates = await findDuplicateCandidates(normalized, "");

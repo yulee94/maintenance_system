@@ -9,7 +9,7 @@ import { demoAuditLogs } from "@/lib/demo";
 export async function GET(request: NextRequest) {
   try {
     await requireUser(request, [RoleCode.ADMIN]);
-    if (appEnv.demoMode) return ok(demoAuditLogs());
+    if (appEnv.demoMode) return ok(await demoAuditLogs());
     const rows = await prisma.auditLog.findMany({
       include: { actor: { select: { id: true, name: true, loginId: true } } },
       orderBy: { createdAt: "desc" },

@@ -18,7 +18,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     const user = await requireUser(request, [RoleCode.ADMIN]);
     const { id } = await context.params;
     const input = await readJson(request, schema);
-    if (appEnv.demoMode) return ok(demoRejectWorkOrder(id, input.reason));
+    if (appEnv.demoMode) return ok(await demoRejectWorkOrder(id, input.reason));
     const before = await prisma.workOrder.findUnique({ where: { id } });
     if (!before) throw new ApiError(404, "정비건을 찾을 수 없습니다.");
     const row = await prisma.workOrder.update({

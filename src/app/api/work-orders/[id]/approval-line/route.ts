@@ -33,7 +33,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     await requireUser(request, [RoleCode.ADMIN]);
     const { id } = await context.params;
     const input = await readJson(request, schema);
-    if (appEnv.demoMode) return ok(demoSetApprovalLine(id, input));
+    if (appEnv.demoMode) return ok(await demoSetApprovalLine(id, input));
 
     const row = await prisma.workOrder.findUnique({
       where: { id },

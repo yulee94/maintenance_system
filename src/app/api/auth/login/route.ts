@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
   try {
     const input = await readJson(request, schema);
     if (appEnv.demoMode) {
-      const demoUser = demoLogin(input.loginId, input.password);
+      const demoUser = await demoLogin(input.loginId, input.password);
       if (!demoUser) throw new ApiError(401, "아이디 또는 비밀번호를 확인하세요.");
       const token = await signSession(demoUser);
       const response = ok(demoUser);
