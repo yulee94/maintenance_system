@@ -56,6 +56,21 @@ export type DemoApprovalStep = {
   memo?: string | null;
 };
 
+type DemoAttachment = {
+  id: string;
+  reportId?: string;
+  uploadedById?: string;
+  fileName: string;
+  originalName: string;
+  mimeType: string;
+  mediaType: "IMAGE" | "VIDEO" | "FILE";
+  stage: string;
+  sizeBytes: number;
+  storagePath: string;
+  publicPath?: string | null;
+  createdAt: string;
+};
+
 type DemoWorkOrder = {
   id: string;
   requestNo: string;
@@ -89,6 +104,7 @@ type DemoWorkOrder = {
     diagnosisResult: string;
     actionTaken: string;
     submittedAt: string;
+    attachments: DemoAttachment[];
   }[];
   workOrderAttachments: unknown[];
   targetChangeRequests: unknown[];
@@ -263,7 +279,8 @@ async function buildTemplateWorkOrders(users: DemoUser[], dailyRows: DailyStatus
               resultType: WorkResultType.COMPLETED,
               diagnosisResult: diagnosisResult || row.faultDescription,
               actionTaken,
-              submittedAt: completedAt ?? requestDate
+              submittedAt: completedAt ?? requestDate,
+              attachments: []
             }
           ]
         : [],
@@ -703,7 +720,8 @@ export async function demoSubmitReport(
     resultType: input.resultType,
     diagnosisResult: input.diagnosisResult,
     actionTaken: input.actionTaken,
-    submittedAt: new Date().toISOString()
+    submittedAt: new Date().toISOString(),
+    attachments: [] as DemoAttachment[]
   };
   row.status = WorkOrderStatus.REPORT_SUBMITTED;
   row.resultType = input.resultType;
@@ -715,6 +733,40 @@ export async function demoSubmitReport(
   row.statusHistories.unshift({ id: `demo-status-${Date.now()}`, toStatus: row.status, reason: "완료보고 제출", createdAt: report.submittedAt });
   audit(store, "work_order.report", "workReport", report.id, report);
   return { report, workOrder: row };
+}
+
+export async function demoUploadReportAttachment(
+  reportId: string,
+  stage: string,
+  saved: Omit<DemoAttachment, "id" | "reportId" | "uploadedById" | "stage" | "createdAt">,
+  uploadedById?: string
+) {
+  const store = await demoStore();
+  const workOrder = store.workOrders.find((row) => row.reports.some((report) => report.id === reportId));
+  const report = workOrder?.reports.find((item) => item.id === reportId);
+  if (!workOrder || !report) throw new Error("완료보고를 찾을 수 없습니다.");
+  const attachment: DemoAttachment = {
+    id: `demo-report-attachment-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    reportId,
+    uploadedById,
+    stage,
+    createdAt: new Date().toISOString(),
+    ...saved
+  };
+  report.attachments.unshift(attachment);
+  audit(store, "upload.work_report", "workReportAttachment", attachment.id, attachment);
+  return attachment;
+}
+
+export async function demoFindAttachmentByFileName(fileName: string) {
+  const store = await demoStore();
+  for (const workOrder of store.workOrders) {
+    for (const report of workOrder.reports) {
+      const attachment = report.attachments.find((item) => item.fileName === fileName);
+      if (attachment) return attachment;
+    }
+  }
+  return null;
 }
 
 export async function demoSetApprovalLine(id: string, input: { adminApproverId?: string; executiveApproverId?: string }) {

@@ -91,8 +91,32 @@ type WorkOrder = {
   } | null;
   assignedMechanic?: { id: string; name: string; title?: string | null; phone?: string | null } | null;
   comments?: { id: string; body: string; createdAt: string; author?: { name: string } | null }[];
-  reports?: { id: string; resultType: string; diagnosisResult: string; actionTaken: string; submittedAt: string }[];
+  reports?: {
+    id: string;
+    resultType: string;
+    diagnosisResult: string;
+    actionTaken: string;
+    submittedAt: string;
+    attachments?: WorkReportAttachment[];
+  }[];
   targetChangeRequests?: Record<string, unknown>[];
+};
+
+type WorkReportAttachment = {
+  id: string;
+  originalName: string;
+  mimeType: string;
+  mediaType: "IMAGE" | "VIDEO" | "FILE";
+  sizeBytes: number;
+  publicPath?: string | null;
+  createdAt: string;
+};
+
+type ReportSubmitResponse = {
+  report: {
+    id: string;
+  };
+  workOrder: WorkOrder;
 };
 
 type EquipmentAsset = {
@@ -2211,8 +2235,49 @@ function MechanicActions({ selected, onChanged }: { selected: WorkOrder | null; 
   const [actionTaken, setActionTaken] = useState("");
   const [resultType, setResultType] = useState("COMPLETED");
   const [targetRequestDate, setTargetRequestDate] = useState("");
+  const [reportFiles, setReportFiles] = useState<File[]>([]);
+  const [reportMessage, setReportMessage] = useState("");
+  const [submittingReport, setSubmittingReport] = useState(false);
+  const reportFileInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    setReportFiles([]);
+    setReportMessage("");
+    if (reportFileInputRef.current) reportFileInputRef.current.value = "";
+  }, [selected?.id]);
 
   if (!selected) return <div className="detail-panel">현재 배정된 미결 업무가 없습니다.</div>;
+
+  async function submitReport() {
+    if (!selected) return;
+    setSubmittingReport(true);
+    setReportMessage("");
+    try {
+      const response = await postJson<ReportSubmitResponse>(`/api/work-orders/${selected.id}/report`, {
+        resultType,
+        diagnosisResult: diagnosisResult.trim() || "현장 점검 후 원인 확인",
+        actionTaken: actionTaken.trim() || "조치 완료 후 시운전 확인"
+      });
+      for (const file of reportFiles) {
+        const formData = new FormData();
+        formData.append("reportId", response.report.id);
+        formData.append("stage", "REPORT");
+        formData.append("file", file);
+        await api<WorkReportAttachment>("/api/uploads/work-report", { method: "POST", body: formData });
+      }
+      setDiagnosisResult("");
+      setActionTaken("");
+      setReportFiles([]);
+      if (reportFileInputRef.current) reportFileInputRef.current.value = "";
+      setReportMessage(reportFiles.length ? `완료보고와 사진 ${reportFiles.length}장이 등록되었습니다.` : "완료보고가 등록되었습니다.");
+      await onChanged();
+    } catch (error) {
+      setReportMessage(error instanceof Error ? error.message : "완료보고 등록에 실패했습니다.");
+    } finally {
+      setSubmittingReport(false);
+    }
+  }
+
   return (
     <div className="detail-panel form-grid">
       <div className="section-header">
@@ -2236,21 +2301,38 @@ function MechanicActions({ selected, onChanged }: { selected: WorkOrder | null; 
         <label>조치 내용</label>
         <textarea value={actionTaken} onChange={(event) => setActionTaken(event.target.value)} placeholder="예: 호스 클램프 교체 및 시운전 완료" />
       </div>
+      <div className="field">
+        <label htmlFor="reportPhotos">정비 사진 첨부</label>
+        <div className="file-picker">
+          <input
+            id="reportPhotos"
+            ref={reportFileInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            onChange={(event) => setReportFiles(Array.from(event.target.files ?? []))}
+          />
+          <small>현장 사진, 교체 부품, 완료 상태 사진을 여러 장 첨부할 수 있습니다.</small>
+        </div>
+        {reportFiles.length ? (
+          <div className="attachment-preview-grid">
+            {reportFiles.map((file) => (
+              <div className="attachment-preview" key={`${file.name}-${file.lastModified}`}>
+                <strong>{file.name}</strong>
+                <span>{formatFileSize(file.size)}</span>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
+      {reportMessage ? <p className="notice">{reportMessage}</p> : null}
       <button
         className="primary"
         type="button"
-        onClick={async () => {
-          await postJson(`/api/work-orders/${selected.id}/report`, {
-            resultType,
-            diagnosisResult: diagnosisResult.trim() || "현장 점검 후 원인 확인",
-            actionTaken: actionTaken.trim() || "조치 완료 후 시운전 확인"
-          });
-          setDiagnosisResult("");
-          setActionTaken("");
-          await onChanged();
-        }}
+        disabled={submittingReport}
+        onClick={submitReport}
       >
-        <CheckCircle2 size={16} />완료보고 제출
+        <CheckCircle2 size={16} />{submittingReport ? "제출 중" : "완료보고 제출"}
       </button>
       <div className="form-row">
         <Input label="목표일 변경 요청" type="date" value={targetRequestDate} onChange={setTargetRequestDate} />
@@ -2289,6 +2371,7 @@ function Timeline({ selected }: { selected: WorkOrder }) {
           <span>{resultLabel[report.resultType] ?? report.resultType} · {formatDate(report.submittedAt)}</span>
           <strong>{report.actionTaken}</strong>
           <p className="muted">{report.diagnosisResult}</p>
+          <ReportAttachments attachments={report.attachments ?? []} />
         </div>
       ))}
       {comments.map((comment) => (
@@ -2296,6 +2379,27 @@ function Timeline({ selected }: { selected: WorkOrder }) {
           <span>{comment.author?.name ?? "시스템"} · {formatDate(comment.createdAt)}</span>
           <strong>{comment.body}</strong>
         </div>
+      ))}
+    </div>
+  );
+}
+
+function ReportAttachments({ attachments }: { attachments: WorkReportAttachment[] }) {
+  if (!attachments.length) return null;
+  return (
+    <div className="report-attachments">
+      {attachments.map((attachment) => (
+        <a className="report-attachment" href={attachment.publicPath ?? "#"} key={attachment.id} target="_blank" rel="noreferrer">
+          {attachment.mediaType === "IMAGE" && attachment.publicPath ? (
+            <img src={attachment.publicPath} alt={attachment.originalName} />
+          ) : (
+            <span className="file-thumb">파일</span>
+          )}
+          <span>
+            <strong>{attachment.originalName}</strong>
+            <small>{formatFileSize(attachment.sizeBytes)}</small>
+          </span>
+        </a>
       ))}
     </div>
   );
@@ -3310,6 +3414,12 @@ function labelStatus(status: string) {
 function formatDate(value?: string | null) {
   if (!value) return "-";
   return value.slice(0, 10);
+}
+
+function formatFileSize(size: number) {
+  if (size < 1024) return `${size}B`;
+  if (size < 1024 * 1024) return `${Math.round(size / 1024)}KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)}MB`;
 }
 
 function isClosed(workOrder: WorkOrder) {

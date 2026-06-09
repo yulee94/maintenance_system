@@ -4,6 +4,8 @@ import { auditLog } from "@/lib/audit";
 import { ApiError, created, handleApiError } from "@/lib/api";
 import { requireUser } from "@/lib/auth";
 import { saveFormFile } from "@/lib/storage";
+import { appEnv } from "@/lib/env";
+import { demoUploadReportAttachment } from "@/lib/demo";
 
 export async function POST(request: NextRequest) {
   try {
@@ -12,8 +14,11 @@ export async function POST(request: NextRequest) {
     const reportId = String(formData.get("reportId") ?? "");
     const stage = String(formData.get("stage") ?? "REPORT") as "REPORT" | "BEFORE" | "DURING" | "AFTER";
     const file = formData.get("file");
-    if (!reportId || !(file instanceof File)) throw new ApiError(422, "reportId and file are required.");
+    if (!reportId || !(file instanceof File)) throw new ApiError(422, "완료보고 ID와 첨부 파일이 필요합니다.");
     const saved = await saveFormFile(file, `reports/${reportId}`);
+    if (appEnv.demoMode) {
+      return created(await demoUploadReportAttachment(reportId, stage, saved, user.id));
+    }
     const row = await prisma.workReportAttachment.create({
       data: { reportId, uploadedById: user.id, stage, ...saved }
     });
