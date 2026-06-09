@@ -81,6 +81,40 @@ Authorization: Bearer {session-token}
 
 꼭 필요한 토큰, 기기 식별자, 앱 잠금 설정값은 Secure Storage에만 저장한다.
 
+## 푸시 알림
+
+모바일 앱은 로그인 후 OS 푸시 권한을 요청하고 `expo-notifications`의 `getDevicePushTokenAsync()`로 네이티브 토큰을 받는다. iOS는 APNs 토큰, Android는 FCM 토큰을 서버에 등록한다.
+
+등록 흐름:
+
+```text
+앱 설치
+  -> FCM/APNs 토큰 발급
+  -> 서버에 device_token 저장
+  -> 이벤트 발생
+  -> 푸시 발송
+```
+
+서버에 저장하는 값:
+
+- `user_id`
+- `branch_id`
+- `device_id`
+- `push_token`
+- `platform`: `ios` 또는 `android`
+- `app_version`
+- `last_active_at`
+
+필수 알림 유형:
+
+- 작업 배정 알림
+- 승인 요청 알림
+- 공지사항
+- 장애 알림
+- 입고/출고 알림
+- 예약 알림
+- 결제/정산 알림
+
 ## 빌드
 
 EAS CLI 설정 후 아래 방식으로 빌드한다.

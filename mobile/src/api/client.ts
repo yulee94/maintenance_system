@@ -1,5 +1,6 @@
 import * as SecureStore from "expo-secure-store";
 import type { AiResponse, AuthUser, Branch, LoginResponse, ReportInput, Summary, TaskBundle, WorkOrder } from "./types";
+import { getNativePushRegistration, type NativePushRegistration } from "../notifications/push";
 
 type ApiEnvelope<T> = {
   ok: boolean;
@@ -29,7 +30,12 @@ export async function login(loginId: string, password: string, otpCode?: string)
   }
 
   await setSecureItem(TOKEN_KEY, data.sessionToken);
-  await registerDevice();
+  try {
+    await registerDevice(await getNativePushRegistration());
+  } catch (error) {
+    await deleteSecureItem(TOKEN_KEY);
+    throw error;
+  }
   return toAuthUser(data);
 }
 
@@ -60,10 +66,24 @@ export async function getBranches() {
   return data.branches;
 }
 
-export async function registerDevice() {
-  return apiRequest<{ device: { registered: boolean; deviceIdHash?: string | null; registeredAt: string } }>(
+export async function registerDevice(input: NativePushRegistration & { branchId?: string | null }) {
+  return apiRequest<{
+    device: {
+      id?: string;
+      userId: string;
+      branchId?: string | null;
+      deviceId: string;
+      pushTokenStored: boolean;
+      platform: string;
+      appVersion?: string | null;
+      lastActiveAt: string;
+    };
+  }>(
     "/api/v1/devices/register",
-    { method: "POST" }
+    {
+      method: "POST",
+      body: JSON.stringify(input)
+    }
   );
 }
 

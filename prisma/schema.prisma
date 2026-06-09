@@ -173,6 +173,7 @@ model User {
   kpiExclusions               KpiExclusion[]               @relation("KpiExclusionCreatedBy")
   auditLogs                   AuditLog[]                   @relation("AuditActor")
   notifications               Notification[]               @relation("NotificationUser")
+  mobileDevices               MobileDevice[]               @relation("UserMobileDevices")
   excelExports                ExcelExportLog[]             @relation("ExcelExportUser")
   workDiaries                 WorkDiary[]                  @relation("WorkDiaryAuthor")
   regularInspectionSchedules  RegularInspectionSchedule[]  @relation("RegularInspectionMechanic")
@@ -655,6 +656,28 @@ model Notification {
 
   user      User?      @relation("NotificationUser", fields: [userId], references: [id])
   workOrder WorkOrder? @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+}
+
+model MobileDevice {
+  id           String    @id @default(cuid())
+  userId       String    @map("user_id")
+  branchId     String?   @map("branch_id")
+  deviceId     String    @map("device_id")
+  pushToken    String    @map("push_token")
+  platform     String
+  appVersion   String?   @map("app_version")
+  lastActiveAt DateTime  @default(now()) @map("last_active_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  revokedAt    DateTime? @map("revoked_at")
+
+  user User @relation("UserMobileDevices", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, deviceId])
+  @@index([branchId])
+  @@index([pushToken])
+  @@index([userId, branchId])
+  @@map("mobile_devices")
 }
 
 model ExcelExportLog {

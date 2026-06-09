@@ -18,7 +18,7 @@
 - `POST /api/v1/login`: 모바일 로그인, `sessionToken` 발급
 - `POST /api/v1/logout`: 모바일 로그아웃
 - `GET /api/v1/me`: 현재 모바일 사용자 조회
-- `POST /api/v1/devices/register`: 로그인 후 모바일 기기 등록
+- `POST /api/v1/devices/register`: 로그인 후 모바일 기기 및 FCM/APNs 푸시 토큰 등록
 - `GET /api/v1/branches`: 접근 가능한 사업장 목록 조회
 - `GET /api/v1/tasks`: 접근 가능한 정비건 목록 및 요약 조회
 - `POST /api/v1/tasks/:id/start`: 모바일 작업 시작
@@ -62,6 +62,7 @@ v2는 앱 기능 확장용이다. v1 앱이 운영 중일 때도 v2를 병행 �
 ## Internal Admin API v1
 
 - `GET /api/internal/v1/health`: 내부 관리자 API 상태 확인, 최고관리자 권한 필요
+- `POST /api/internal/v1/push/send`: 내부 이벤트 기반 모바일 푸시 발송
 
 배치 서버, 운영자 도구, 내부 시스템 연동은 이 네임스페이스를 사용한다. 운영 배포 시 API Gateway, Private Subnet, IP 제한, MFA, 감사 로그 정책을 함께 적용한다.
 
