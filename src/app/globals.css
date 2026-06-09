@@ -1520,6 +1520,7 @@ a {
   --metric-ring: rgba(31, 111, 95, 0.18);
   --metric-shadow: rgba(31, 111, 95, 0.14);
   position: relative;
+  isolation: isolate;
   display: grid;
   align-content: space-between;
   gap: 8px;
@@ -1529,32 +1530,48 @@ a {
   background:
     linear-gradient(135deg, var(--metric-bg), rgba(255, 255, 255, 0.98) 58%),
     var(--surface);
-  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+  transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
 }
 
 .metric-button::after {
   content: "";
   position: absolute;
-  right: -24px;
-  bottom: -28px;
-  width: 78px;
-  height: 78px;
+  z-index: 0;
+  right: -34px;
+  bottom: -42px;
+  width: 96px;
+  height: 96px;
   border-radius: 50%;
-  background: var(--metric-bg);
+  background: var(--metric-color);
+  opacity: 0.13;
+  pointer-events: none;
+  transform: scale(1);
+  transform-origin: center;
+  transition: transform 360ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 220ms ease;
 }
 
-.metric-button:hover {
+.metric-button:hover,
+.metric-button:focus-visible {
   transform: translateY(-1px);
   box-shadow: 0 10px 22px var(--metric-shadow);
 }
 
+.metric-button:hover::after,
+.metric-button:focus-visible::after {
+  opacity: 0.94;
+  transform: scale(7.8);
+}
+
 .metric-button .metric-top {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   gap: 6px;
   color: var(--metric-color);
   font-size: 13px;
   font-weight: 900;
+  transition: color 180ms ease;
 }
 
 .metric-button .metric-top svg {
@@ -1567,6 +1584,7 @@ a {
   color: var(--metric-color);
   font-size: 32px;
   line-height: 1;
+  transition: color 180ms ease;
 }
 
 .metric-button small {
@@ -1575,6 +1593,19 @@ a {
   color: var(--muted);
   font-size: 11px;
   font-weight: 800;
+  transition: color 180ms ease;
+}
+
+.metric-button:hover .metric-top,
+.metric-button:hover strong,
+.metric-button:focus-visible .metric-top,
+.metric-button:focus-visible strong {
+  color: #fff;
+}
+
+.metric-button:hover small,
+.metric-button:focus-visible small {
+  color: rgba(255, 255, 255, 0.88);
 }
 
 .metric-button.active {
