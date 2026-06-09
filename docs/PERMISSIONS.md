@@ -1,5 +1,45 @@
 # 권한 매트릭스
 
+## 목표 로그인 권한체계
+
+장기 운영 권한은 역할(role)과 데이터 범위(scope)를 분리해서 판단한다. 역할은 어떤 기능을 쓸 수 있는지를 정하고, 데이터 범위는 어떤 `branch_id` 또는 권역을 볼 수 있는지를 정한다.
+
+| 목표 역할 | 가능 기능 | 데이터 범위 | 현재 코드 매핑 |
+| --- | --- | --- | --- |
+| 본사 최고관리자 | 전체 사업장 관리, 계정/권한/감사/운영 설정, 전체 KPI/보고 | 전체 `branch_id` | `SUPER_ADMIN` + 전체 branch scope |
+| 지역 관리자 | 담당 권역 사업장 관리, 권역 내 배정/승인/보고/KPI | 담당 권역에 속한 여러 `branch_id` | `ADMIN` + region/branch scope |
+| 사업장 관리자 | 자기 사업장 관리, 접수/배정/승인/계획업무/보고 | 지정된 단일 또는 소수 `branch_id` | `ADMIN` + UserBranch scope |
+| 직원 | 자기 업무 처리, 본인 완료보고, 본인 알림/계획 확인 | 본인 `branch_id`와 본인 배정 업무 | `MECHANIC` 또는 업무별 `RECEPTIONIST` |
+| 외부 협력사 | 지정된 외주/협력 기능만 접근, 지정 작업 상태 업데이트 | 허용된 협력사/작업/branch 범위 | 향후 `PARTNER` 또는 PartnerAccess scope 추가 |
+
+현재 `RoleCode` enum은 바로 이름을 바꾸지 않는다. 기존 앱과 API가 이미 `SUPER_ADMIN`, `ADMIN`, `MECHANIC`, `RECEPTIONIST`, `EXECUTIVE`를 사용하므로, 다음 단계에서는 `Region`, `Branch`, `UserBranch`, `PartnerAccessScope` 같은 범위 모델을 먼저 추가해 기존 권한 위에 scope를 얹는다.
+
+권한 판단 원칙:
+
+- 본사 최고관리자는 모든 사업장 데이터와 권한 관리 기능에 접근할 수 있다.
+- 지역 관리자는 담당 권역에 포함된 사업장만 관리할 수 있다.
+- 사업장 관리자는 자기 사업장의 접수, 정비, 계획, 승인, 보고만 관리할 수 있다.
+- 직원은 자기 업무와 본인에게 배정된 작업만 처리한다. 개인 KPI나 전체 성과 지표는 관리자 이상 권한에서만 제공한다.
+- 외부 협력사는 지정된 기능, 지정된 작업, 지정된 기간 안에서만 접근한다. 계정/권한/KPI/전체 보고서에는 접근하지 않는다.
+- 프론트엔드 메뉴 숨김은 보조 수단이고, 최종 차단은 서버 API에서 role과 branch scope를 함께 검사한다.
+
+권장 서버 판정 흐름:
+
+```ts
+const actor = await requireUser(request);
+const scope = await resolveAccessScope(actor.id);
+
+if (!canUseFeature(actor.roles, "work_order.approve")) {
+  throw new ApiError(403, "이 기능을 사용할 권한이 없습니다.");
+}
+
+const where = scope.allBranches
+  ? { deletedAt: null }
+  : { branchId: { in: scope.branchIds }, deletedAt: null };
+```
+
+## 현재 앱 권한 매트릭스
+
 | 기능 | 접수자 | 정비사 | 관리자 | 임원/대표 | 최고 관리자 |
 | --- | --- | --- | --- | --- |
 | 로그인 | 가능 | 가능 | 가능 | 가능 | 가능 |
