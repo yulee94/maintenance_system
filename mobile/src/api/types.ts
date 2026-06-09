@@ -9,6 +9,7 @@ export type AuthUser = {
 export type LoginResponse = AuthUser & {
   sessionToken?: string;
   expiresInHours?: number;
+  apiVersion?: string;
 };
 
 export type Summary = {
@@ -24,6 +25,8 @@ export type Summary = {
 export type WorkOrder = {
   id: string;
   requestNo: string;
+  branchId?: string | null;
+  branchName?: string | null;
   requestDate: string;
   equipmentInput?: string | null;
   equipmentNoNormalized?: string | null;
@@ -46,6 +49,24 @@ export type WorkOrder = {
     actionTaken: string;
     submittedAt: string;
   }[];
+};
+
+export type Branch = {
+  id: string;
+  code: string;
+  name: string;
+  customerId?: string | null;
+  customerName?: string | null;
+  isActive: boolean;
+  source: "site" | "demo";
+};
+
+export type TaskBundle = {
+  apiVersion: string;
+  summary: Summary;
+  tasks: WorkOrder[];
+  total: number;
+  serverTime: string;
 };
 
 export type AiResponse = {

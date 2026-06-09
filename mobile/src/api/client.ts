@@ -1,5 +1,5 @@
 import * as SecureStore from "expo-secure-store";
-import type { AiResponse, AuthUser, LoginResponse, ReportInput, Summary, WorkOrder } from "./types";
+import type { AiResponse, AuthUser, Branch, LoginResponse, ReportInput, Summary, TaskBundle, WorkOrder } from "./types";
 
 type ApiEnvelope<T> = {
   ok: boolean;
@@ -12,7 +12,7 @@ const DEVICE_ID_KEY = "maintenance.mobile.deviceId";
 const API_BASE_URL = (process.env.EXPO_PUBLIC_API_BASE_URL ?? "http://localhost:3000").replace(/\/$/, "");
 
 export async function login(loginId: string, password: string) {
-  const data = await apiRequest<LoginResponse>("/api/auth/login", {
+  const data = await apiRequest<LoginResponse>("/api/v1/login", {
     method: "POST",
     body: JSON.stringify({ loginId, password })
   });
@@ -26,36 +26,45 @@ export async function login(loginId: string, password: string) {
 }
 
 export async function logout() {
-  await apiRequest<{ loggedOut: boolean }>("/api/auth/logout", { method: "POST" }).catch(() => undefined);
+  await apiRequest<{ loggedOut: boolean }>("/api/v1/logout", { method: "POST" }).catch(() => undefined);
   await SecureStore.deleteItemAsync(TOKEN_KEY);
 }
 
 export async function getMe() {
-  const data = await apiRequest<{ user: AuthUser | null }>("/api/auth/me");
+  const data = await apiRequest<{ user: AuthUser | null }>("/api/v1/me");
   return data.user;
 }
 
-export function getDashboardSummary() {
-  return apiRequest<Summary>("/api/dashboard/summary");
+export async function getTaskBundle() {
+  return apiRequest<TaskBundle>("/api/v1/tasks");
 }
 
-export function getWorkOrders() {
-  return apiRequest<WorkOrder[]>("/api/work-orders");
+export async function getDashboardSummary() {
+  return (await getTaskBundle()).summary;
+}
+
+export async function getWorkOrders() {
+  return (await getTaskBundle()).tasks;
+}
+
+export async function getBranches() {
+  const data = await apiRequest<{ branches: Branch[] }>("/api/v1/branches");
+  return data.branches;
 }
 
 export function startWorkOrder(id: string) {
-  return apiRequest<WorkOrder>(`/api/work-orders/${id}/start`, { method: "POST" });
+  return apiRequest<WorkOrder>(`/api/v1/tasks/${id}/start`, { method: "POST" });
 }
 
 export function submitWorkReport(id: string, input: ReportInput) {
-  return apiRequest<{ report: { id: string }; workOrder: WorkOrder }>(`/api/work-orders/${id}/report`, {
+  return apiRequest<{ report: { id: string }; workOrder: WorkOrder }>(`/api/v1/tasks/${id}/report`, {
     method: "POST",
     body: JSON.stringify(input)
   });
 }
 
 export function askAi(question: string) {
-  return apiRequest<AiResponse>("/api/mobile/ai", {
+  return apiRequest<AiResponse>("/api/v1/ai", {
     method: "POST",
     body: JSON.stringify({ question })
   });

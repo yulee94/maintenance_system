@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { getDashboardSummary, getWorkOrders } from "../api/client";
+import { getTaskBundle } from "../api/client";
 import type { Summary, WorkOrder } from "../api/types";
 import { isClosed, isToday, sortWorkOrders } from "../utils";
 
@@ -12,9 +12,9 @@ export function useWorkOrders() {
 
   const load = useCallback(async () => {
     setError(null);
-    const [summaryData, workOrderData] = await Promise.all([getDashboardSummary(), getWorkOrders()]);
-    setSummary(summaryData);
-    setWorkOrders(sortWorkOrders(workOrderData));
+    const taskBundle = await getTaskBundle();
+    setSummary(taskBundle.summary);
+    setWorkOrders(sortWorkOrders(taskBundle.tasks));
   }, []);
 
   useEffect(() => {
