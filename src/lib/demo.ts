@@ -34,6 +34,21 @@ type DemoEquipment = {
   site: { name: string };
 };
 
+export type DemoApprovalStep = {
+  id: string;
+  role: "MECHANIC" | "ADMIN" | "EXECUTIVE";
+  label: string;
+  approverId?: string | null;
+  approverName?: string | null;
+  approverTitle?: string | null;
+  status: "NOT_STARTED" | "PENDING" | "APPROVED" | "REJECTED";
+  requestedAt?: string | null;
+  approvedAt?: string | null;
+  approvedById?: string | null;
+  approvedByName?: string | null;
+  memo?: string | null;
+};
+
 type DemoWorkOrder = {
   id: string;
   requestNo: string;
@@ -58,6 +73,7 @@ type DemoWorkOrder = {
   mechanicReportedAt?: string | null;
   adminApprovedAt?: string | null;
   finalCompletedAt?: string | null;
+  approvalLine?: DemoApprovalStep[] | null;
   isDelayed?: boolean;
   comments: { id: string; body: string; createdAt: string; author?: { name: string } | null }[];
   reports: {
@@ -758,7 +774,11 @@ export function demoDashboardSummary() {
 }
 
 export function demoWorkOrders() {
-  return demoStore().workOrders;
+  const store = demoStore();
+  for (const row of store.workOrders) {
+    row.approvalLine ??= makeDemoApprovalLine(row, store);
+  }
+  return store.workOrders;
 }
 
 export function demoCreateWorkOrder(input: {
@@ -887,17 +907,61 @@ export function demoSubmitReport(
   row.actionTaken = input.actionTaken;
   row.mechanicReportedAt = report.submittedAt;
   row.reports.unshift(report);
+  row.approvalLine = makeDemoApprovalLine(row, store);
   row.statusHistories.unshift({ id: `demo-status-${Date.now()}`, toStatus: row.status, reason: "완료보고 제출", createdAt: report.submittedAt });
   audit(store, "work_order.report", "workReport", report.id, report);
   return { report, workOrder: row };
 }
 
-export function demoApproveWorkOrder(id: string, input?: { memo?: string; kpiExcluded?: boolean; kpiExclusionReason?: string }) {
+export function demoSetApprovalLine(id: string, input: { adminApproverId?: string; executiveApproverId?: string }) {
   const store = demoStore();
   const row = findWorkOrder(id);
+  const admin = store.users.find((user) => user.id === input.adminApproverId) ?? store.users.find((user) => user.loginId === "ko.ms");
+  const executive = store.users.find((user) => user.id === input.executiveApproverId) ?? store.users.find((user) => user.loginId === "kim.ms");
+  row.approvalLine = makeDemoApprovalLine(row, store, admin, executive);
+  audit(store, "work_order.approval_line", "workOrder", row.id, row.approvalLine);
+  return row;
+}
+
+export function demoApproveWorkOrder(
+  id: string,
+  input?: { memo?: string; kpiExcluded?: boolean; kpiExclusionReason?: string },
+  actor?: { id: string; name: string; roles: RoleCode[] }
+) {
+  const store = demoStore();
+  const row = findWorkOrder(id);
+  row.approvalLine ??= makeDemoApprovalLine(row, store);
+  markMechanicStep(row);
+  const step = row.approvalLine.find((item) => item.status === "PENDING" && item.role !== "MECHANIC");
+  if (step) {
+    const roles = actor?.roles ?? [];
+    const isAssignedApprover = !step.approverId || step.approverId === actor?.id;
+    const canApprove =
+      roles.includes(RoleCode.SUPER_ADMIN) ||
+      (step.role === "ADMIN" && roles.includes(RoleCode.ADMIN)) ||
+      (step.role === "EXECUTIVE" && roles.includes(RoleCode.EXECUTIVE));
+    if (!canApprove || (!roles.includes(RoleCode.SUPER_ADMIN) && !isAssignedApprover)) {
+      throw new Error("해당 결재 순서를 승인할 권한이 없습니다.");
+    }
+    step.status = "APPROVED";
+    step.approvedAt = new Date().toISOString();
+    step.approvedById = actor?.id ?? step.approverId;
+    step.approvedByName = actor?.name ?? step.approverName;
+    step.memo = input?.memo ?? step.memo;
+    if (step.role === "ADMIN") row.adminApprovedAt = step.approvedAt;
+  }
+  unlockNextStep(row);
+  const allApproved = row.approvalLine.filter((item) => item.role !== "MECHANIC").every((item) => item.status === "APPROVED");
+  if (!allApproved) {
+    row.status = WorkOrderStatus.ADMIN_REVIEW;
+    row.memo = input?.memo ?? row.memo;
+    row.statusHistories.unshift({ id: `demo-status-${Date.now()}`, toStatus: row.status, reason: "결재 진행", createdAt: new Date().toISOString() });
+    audit(store, "work_order.approve_step", "workOrder", row.id, row);
+    return row;
+  }
   const finalCompleted = row.resultType === WorkResultType.COMPLETED;
   row.status = finalCompleted ? WorkOrderStatus.FINAL_COMPLETED : WorkOrderStatus.TEMPORARY_ACTION;
-  row.adminApprovedAt = new Date().toISOString();
+  row.adminApprovedAt ??= new Date().toISOString();
   row.finalCompletedAt = finalCompleted ? row.adminApprovedAt : null;
   row.memo = input?.memo ?? row.memo;
   row.statusHistories.unshift({ id: `demo-status-${Date.now()}`, toStatus: row.status, reason: "관리자 승인", createdAt: row.adminApprovedAt });
@@ -997,6 +1061,79 @@ function findWorkOrder(id: string) {
   const row = demoStore().workOrders.find((workOrder) => workOrder.id === id);
   if (!row) throw new Error("Demo work order not found.");
   return row;
+}
+
+function makeDemoApprovalLine(row: DemoWorkOrder, store: DemoStore, adminUser?: DemoUser, executiveUser?: DemoUser): DemoApprovalStep[] {
+  const admin = adminUser ?? store.users.find((user) => user.loginId === "ko.ms");
+  const executive = executiveUser ?? store.users.find((user) => user.loginId === "kim.ms");
+  const mechanicDone = Boolean(row.mechanicReportedAt || row.reports.length);
+  const adminDone = Boolean(row.adminApprovedAt || row.finalCompletedAt);
+  const finalDone = Boolean(row.finalCompletedAt);
+  return [
+    {
+      id: "mechanic-report",
+      role: "MECHANIC",
+      label: "정비사 완료보고",
+      approverId: row.assignedMechanic?.id,
+      approverName: row.assignedMechanic?.name ?? "미배정",
+      approverTitle: row.assignedMechanic?.title,
+      status: mechanicDone ? "APPROVED" : "PENDING",
+      requestedAt: row.requestedAt,
+      approvedAt: row.mechanicReportedAt ?? null,
+      approvedById: row.assignedMechanic?.id,
+      approvedByName: row.assignedMechanic?.name
+    },
+    {
+      id: "admin-approval",
+      role: "ADMIN",
+      label: "관리자 승인",
+      approverId: admin?.id,
+      approverName: admin ? `${admin.name} ${admin.title ?? ""}`.trim() : "고민서 책임",
+      approverTitle: admin?.title,
+      status: adminDone ? "APPROVED" : mechanicDone ? "PENDING" : "NOT_STARTED",
+      requestedAt: row.mechanicReportedAt ?? null,
+      approvedAt: row.adminApprovedAt ?? null,
+      approvedById: adminDone ? admin?.id : null,
+      approvedByName: adminDone ? admin?.name : null
+    },
+    {
+      id: "executive-approval",
+      role: "EXECUTIVE",
+      label: "임원 최종승인",
+      approverId: executive?.id,
+      approverName: executive ? `${executive.name} ${executive.title ?? ""}`.trim() : "김민식 전무",
+      approverTitle: executive?.title,
+      status: finalDone ? "APPROVED" : adminDone ? "PENDING" : "NOT_STARTED",
+      requestedAt: row.adminApprovedAt ?? null,
+      approvedAt: row.finalCompletedAt ?? null,
+      approvedById: finalDone ? executive?.id : null,
+      approvedByName: finalDone ? executive?.name : null
+    }
+  ];
+}
+
+function markMechanicStep(row: DemoWorkOrder) {
+  const mechanic = row.approvalLine?.find((item) => item.role === "MECHANIC");
+  if (mechanic && (row.mechanicReportedAt || row.reports.length)) {
+    mechanic.status = "APPROVED";
+    mechanic.approvedAt = row.mechanicReportedAt ?? mechanic.approvedAt ?? new Date().toISOString();
+    mechanic.approvedById = row.assignedMechanic?.id;
+    mechanic.approvedByName = row.assignedMechanic?.name;
+  }
+}
+
+function unlockNextStep(row: DemoWorkOrder) {
+  const mechanic = row.approvalLine?.find((item) => item.role === "MECHANIC");
+  const admin = row.approvalLine?.find((item) => item.role === "ADMIN");
+  const executive = row.approvalLine?.find((item) => item.role === "EXECUTIVE");
+  if (admin?.status === "NOT_STARTED" && mechanic?.status === "APPROVED") {
+    admin.status = "PENDING";
+    admin.requestedAt = row.mechanicReportedAt ?? new Date().toISOString();
+  }
+  if (executive?.status === "NOT_STARTED" && admin?.status === "APPROVED") {
+    executive.status = "PENDING";
+    executive.requestedAt = admin.approvedAt ?? new Date().toISOString();
+  }
 }
 
 function isDelayed(row: DemoWorkOrder) {

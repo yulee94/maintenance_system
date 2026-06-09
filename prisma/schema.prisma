@@ -393,6 +393,7 @@ model WorkOrder {
   mechanicReportedAt       DateTime?
   adminApprovedAt          DateTime?
   finalCompletedAt         DateTime?
+  approvalLine             Json?
   resultType               WorkResultType  @default(UNKNOWN)
   diagnosisResult          String?
   actionTaken              String?

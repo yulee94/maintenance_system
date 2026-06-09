@@ -61,7 +61,9 @@ type WorkOrder = {
   memo?: string | null;
   resultType?: string | null;
   mechanicReportedAt?: string | null;
+  adminApprovedAt?: string | null;
   finalCompletedAt?: string | null;
+  approvalLine?: ApprovalStep[] | null;
   isDelayed?: boolean;
   customer?: { id: string; name: string } | null;
   site?: { id: string; name: string } | null;
@@ -80,6 +82,21 @@ type WorkOrder = {
   comments?: { id: string; body: string; createdAt: string; author?: { name: string } | null }[];
   reports?: { id: string; resultType: string; diagnosisResult: string; actionTaken: string; submittedAt: string }[];
   targetChangeRequests?: Record<string, unknown>[];
+};
+
+type ApprovalStep = {
+  id: string;
+  role: "MECHANIC" | "ADMIN" | "EXECUTIVE";
+  label: string;
+  approverId?: string | null;
+  approverName?: string | null;
+  approverTitle?: string | null;
+  status: "NOT_STARTED" | "PENDING" | "APPROVED" | "REJECTED";
+  requestedAt?: string | null;
+  approvedAt?: string | null;
+  approvedById?: string | null;
+  approvedByName?: string | null;
+  memo?: string | null;
 };
 
 type UserRow = {
@@ -220,6 +237,7 @@ const demoAccounts = [
 const tabs = [
   { id: "dashboard", label: "현황", icon: Gauge, allow: () => true },
   { id: "daily", label: "일일현황", icon: ClipboardCheck, allow: (user: AuthUser) => hasAnyRole(user, ["SUPER_ADMIN", "ADMIN"]) },
+  { id: "approval", label: "승인", icon: CheckCircle2, allow: (user: AuthUser) => hasAnyRole(user, ["SUPER_ADMIN", "ADMIN", "EXECUTIVE"]) },
   { id: "reception", label: "접수", icon: Plus, allow: (user: AuthUser) => hasAnyRole(user, ["SUPER_ADMIN", "ADMIN", "RECEPTIONIST"]) },
   { id: "workorders", label: "정비건", icon: ClipboardList, allow: (user: AuthUser) => hasAnyRole(user, ["SUPER_ADMIN", "ADMIN", "EXECUTIVE", "RECEPTIONIST"]) },
   { id: "mechanic", label: "내 작업", icon: Wrench, allow: (user: AuthUser) => hasAnyRole(user, ["MECHANIC"]) },
@@ -357,9 +375,21 @@ export function AppShell() {
           {message ? <p className="notice">{message}</p> : null}
           {tab === "dashboard" ? <Dashboard summary={summary} workOrders={workOrders} user={user} select={setSelectedId} switchTab={setTab} /> : null}
           {tab === "daily" ? <DailyStatusPanel workOrders={workOrders} users={users} onOpen={(id) => { setSelectedId(id); setTab("workorders"); }} /> : null}
+          {tab === "approval" ? (
+            <ApprovalPanel
+              currentUser={user}
+              workOrders={workOrders}
+              users={users}
+              onOpen={(id) => {
+                setSelectedId(id);
+                setTab("workorders");
+              }}
+              onChanged={refresh}
+            />
+          ) : null}
           {tab === "reception" ? <ReceptionPanel onCreated={refresh} /> : null}
           {tab === "workorders" ? (
-            <WorkOrdersPanel workOrders={workOrders} selected={selected} users={users} canAdmin={canAdmin} onSelect={setSelectedId} onChanged={refresh} />
+            <WorkOrdersPanel workOrders={workOrders} selected={selected} users={users} currentUser={user} canAdmin={canAdmin} onSelect={setSelectedId} onChanged={refresh} />
           ) : null}
           {tab === "mechanic" ? <MechanicPanel user={user} workOrders={workOrders} selected={selected} onSelect={setSelectedId} onChanged={refresh} /> : null}
           {tab === "calendar" ? <CalendarPanel /> : null}
@@ -1139,10 +1169,195 @@ function ReceptionPanel({ onCreated }: { onCreated: () => Promise<void> }) {
   );
 }
 
+function ApprovalPanel({
+  currentUser,
+  workOrders,
+  users,
+  onOpen,
+  onChanged
+}: {
+  currentUser: AuthUser;
+  workOrders: WorkOrder[];
+  users: UserRow[];
+  onOpen: (id: string) => void;
+  onChanged: () => Promise<void>;
+}) {
+  const [filter, setFilter] = useState<"ALL" | "ADMIN" | "EXECUTIVE" | "DONE">("ALL");
+  const approvalRows = useMemo(
+    () => sortWorkOrders(workOrders.filter((row) => isApprovalTarget(row, users)), "priority"),
+    [users, workOrders]
+  );
+  const completedRows = useMemo(
+    () => sortWorkOrders(workOrders.filter((row) => row.status === "FINAL_COMPLETED" || row.status === "TEMPORARY_ACTION"), "requestDate").slice(0, 12),
+    [workOrders]
+  );
+  const adminPending = approvalRows.filter((row) => nextApprovalStep(resolveApprovalLineForWorkOrder(row, users))?.role === "ADMIN");
+  const executivePending = approvalRows.filter((row) => nextApprovalStep(resolveApprovalLineForWorkOrder(row, users))?.role === "EXECUTIVE");
+  const myPending = approvalRows.filter((row) => {
+    const step = nextApprovalStep(resolveApprovalLineForWorkOrder(row, users));
+    return step ? canApproveApprovalStep(currentUser, step) : false;
+  });
+  const visibleRows =
+    filter === "DONE"
+      ? completedRows
+      : approvalRows.filter((row) => {
+          const step = nextApprovalStep(resolveApprovalLineForWorkOrder(row, users));
+          if (filter === "ADMIN") return step?.role === "ADMIN";
+          if (filter === "EXECUTIVE") return step?.role === "EXECUTIVE";
+          return true;
+        });
+
+  return (
+    <div className="section approval-board">
+      <div className="section-header">
+        <div>
+          <h2>정비 완료 승인</h2>
+          <p>정비사 완료보고 이후 고민서 책임 승인, 김민식 전무 최종승인 순서로 결재합니다.</p>
+        </div>
+        <span className="chip green">내 승인 {myPending.length}건</span>
+      </div>
+      <div className="approval-metric-grid">
+        <button className={`metric metric-button ${filter === "ALL" ? "active" : ""}`} type="button" onClick={() => setFilter("ALL")}>
+          <span>전체 승인대기</span>
+          <strong>{approvalRows.length}</strong>
+        </button>
+        <button className={`metric metric-button ${filter === "ADMIN" ? "active" : ""}`} type="button" onClick={() => setFilter("ADMIN")}>
+          <span>고민서 책임 단계</span>
+          <strong>{adminPending.length}</strong>
+        </button>
+        <button className={`metric metric-button ${filter === "EXECUTIVE" ? "active" : ""}`} type="button" onClick={() => setFilter("EXECUTIVE")}>
+          <span>김민식 전무 단계</span>
+          <strong>{executivePending.length}</strong>
+        </button>
+        <button className={`metric metric-button ${filter === "DONE" ? "active" : ""}`} type="button" onClick={() => setFilter("DONE")}>
+          <span>최근 승인완료</span>
+          <strong>{completedRows.length}</strong>
+        </button>
+      </div>
+      <div className="approval-list">
+        {visibleRows.map((row) => (
+          <ApprovalWorkflowCard
+            currentUser={currentUser}
+            key={row.id}
+            row={row}
+            users={users}
+            onOpen={onOpen}
+            onChanged={onChanged}
+          />
+        ))}
+        {!visibleRows.length ? <p className="notice">현재 조건에 맞는 승인 대상이 없습니다.</p> : null}
+      </div>
+    </div>
+  );
+}
+
+function ApprovalWorkflowCard({
+  currentUser,
+  row,
+  users,
+  onOpen,
+  onChanged
+}: {
+  currentUser: AuthUser;
+  row: WorkOrder;
+  users: UserRow[];
+  onOpen: (id: string) => void;
+  onChanged: () => Promise<void>;
+}) {
+  const line = resolveApprovalLineForWorkOrder(row, users);
+  const adminStep = line.find((step) => step.role === "ADMIN");
+  const executiveStep = line.find((step) => step.role === "EXECUTIVE");
+  const currentStep = nextApprovalStep(line);
+  const [adminApproverId, setAdminApproverId] = useState(adminStep?.approverId ?? "");
+  const [executiveApproverId, setExecutiveApproverId] = useState(executiveStep?.approverId ?? "");
+  const [message, setMessage] = useState("");
+  const canEditLine = hasAnyRole(currentUser, ["SUPER_ADMIN", "ADMIN"]);
+  const canApprove = currentStep ? canApproveApprovalStep(currentUser, currentStep) : false;
+  const adminOptions = makeApproverOptions(users, ["SUPER_ADMIN", "ADMIN"], adminStep, "ko.ms", "고민서 책임");
+  const executiveOptions = makeApproverOptions(users, ["EXECUTIVE"], executiveStep, "kim.ms", "김민식 전무");
+
+  useEffect(() => {
+    setAdminApproverId(adminStep?.approverId ?? "");
+    setExecutiveApproverId(executiveStep?.approverId ?? "");
+    setMessage("");
+  }, [adminStep?.approverId, executiveStep?.approverId, row.id]);
+
+  return (
+    <article className={`approval-card ${priorityClass[row.priorityLevel]}`}>
+      <div className="approval-card-main">
+        <div className="approval-card-head">
+          <div>
+            <button className="link-button" type="button" onClick={() => onOpen(row.id)}>{row.requestNo}</button>
+            <strong>{row.customer?.name ?? "미지정"} · {row.equipmentInput ?? row.equipmentNoNormalized ?? "-"}</strong>
+            <p>{row.faultDescription}</p>
+          </div>
+          <div className="chips">
+            <span className={`chip ${priorityChip[row.priorityLevel]}`}>{priorityLabel[row.priorityLevel]}</span>
+            <span className="chip">{labelStatus(row.status)}</span>
+            <span className="chip">Target {formatDate(row.targetDueDate)}</span>
+          </div>
+        </div>
+        <ApprovalLineView steps={line} />
+        <div className="approval-summary-grid">
+          <Info label="정비사" value={row.assignedMechanic?.name ?? "미배정"} />
+          <Info label="완료보고" value={formatDate(row.mechanicReportedAt ?? row.reports?.[0]?.submittedAt)} />
+          <Info label="현재 단계" value={currentStep ? `${currentStep.label} · ${currentStep.approverName ?? "-"}` : "결재 완료"} />
+        </div>
+        {canEditLine ? (
+          <div className="approval-select-grid">
+            <Select label="관리자 승인자" value={adminApproverId} onChange={setAdminApproverId} options={adminOptions} />
+            <Select label="임원 최종승인자" value={executiveApproverId} onChange={setExecutiveApproverId} options={executiveOptions} />
+            <div className="field">
+              <label>결재라인</label>
+              <button
+                type="button"
+                onClick={async () => {
+                  setMessage("");
+                  try {
+                    await patchJson(`/api/work-orders/${row.id}/approval-line`, { adminApproverId, executiveApproverId });
+                    await onChanged();
+                    setMessage("결재라인을 저장했습니다.");
+                  } catch (error) {
+                    setMessage(error instanceof Error ? error.message : "결재라인 저장에 실패했습니다.");
+                  }
+                }}
+              >
+                <Users size={16} />저장
+              </button>
+            </div>
+          </div>
+        ) : null}
+        {message ? <p className={message.includes("실패") || message.includes("permission") ? "error" : "notice"}>{message}</p> : null}
+      </div>
+      <div className="approval-card-actions">
+        <span>{currentStep ? `${currentStep.approverName ?? "-"} 차례` : "최종 승인 완료"}</span>
+        <button className="small-button" type="button" onClick={() => onOpen(row.id)}>정비건 열기</button>
+        <button
+          className="primary"
+          disabled={!canApprove}
+          type="button"
+          onClick={async () => {
+            setMessage("");
+            try {
+              await postJson(`/api/work-orders/${row.id}/approve`, {});
+              await onChanged();
+            } catch (error) {
+              setMessage(error instanceof Error ? error.message : "승인 처리에 실패했습니다.");
+            }
+          }}
+        >
+          <CheckCircle2 size={16} />내 승인 처리
+        </button>
+      </div>
+    </article>
+  );
+}
+
 function WorkOrdersPanel({
   workOrders,
   selected,
   users,
+  currentUser,
   canAdmin,
   onSelect,
   onChanged
@@ -1150,6 +1365,7 @@ function WorkOrdersPanel({
   workOrders: WorkOrder[];
   selected: WorkOrder | null;
   users: UserRow[];
+  currentUser: AuthUser;
   canAdmin: boolean;
   onSelect: (id: string) => void;
   onChanged: () => Promise<void>;
@@ -1228,7 +1444,7 @@ function WorkOrdersPanel({
         </div>
         <WorkList workOrders={filtered} selectedId={selected?.id} onSelect={onSelect} />
       </div>
-      <WorkDetail selected={selected} users={users} canAdmin={canAdmin} onChanged={onChanged} />
+      <WorkDetail selected={selected} users={users} currentUser={currentUser} canAdmin={canAdmin} onChanged={onChanged} />
     </div>
   );
 }
@@ -1307,11 +1523,13 @@ function WorkList({
 function WorkDetail({
   selected,
   users,
+  currentUser,
   canAdmin,
   onChanged
 }: {
   selected: WorkOrder | null;
   users: UserRow[];
+  currentUser: AuthUser;
   canAdmin: boolean;
   onChanged: () => Promise<void>;
 }) {
@@ -1321,6 +1539,9 @@ function WorkDetail({
   const mechanicOptions = [{ value: "", label: "정비사 선택" }, ...mechanics.map((user) => ({ value: user.id, label: `${user.name} ${user.title ?? ""}`.trim() }))];
 
   if (!selected) return <div className="detail-panel">정비건을 선택하세요.</div>;
+  const approvalLine = resolveApprovalLineForWorkOrder(selected, users);
+  const currentApprovalStep = nextApprovalStep(approvalLine);
+  const canApproveCurrentStep = currentApprovalStep ? canApproveApprovalStep(currentUser, currentApprovalStep) : false;
   return (
     <div className="detail-panel">
       <div className="section-header">
@@ -1339,6 +1560,33 @@ function WorkDetail({
         <Info label="차대번호" value={selected.equipment?.serialNo} />
         <Info label="진단 결과" value={selected.diagnosisResult} />
         <Info label="조치 내용" value={selected.actionTaken} />
+      </div>
+      <div className="section approval-inline">
+        <div className="section-header">
+          <div>
+            <h3>완료 승인 결재라인</h3>
+            <p>정비사 완료보고 후 관리자, 임원 순서로 최종 완료 처리됩니다.</p>
+          </div>
+        </div>
+        <ApprovalLineView steps={approvalLine} />
+        {currentApprovalStep ? (
+          <div className="toolbar approval-action-bar">
+            <span className="chip">현재 단계: {currentApprovalStep.label} · {currentApprovalStep.approverName ?? "-"}</span>
+            <button
+              className="primary"
+              disabled={!canApproveCurrentStep}
+              type="button"
+              onClick={async () => {
+                await postJson(`/api/work-orders/${selected.id}/approve`, {});
+                await onChanged();
+              }}
+            >
+              <CheckCircle2 size={16} />현재 단계 승인
+            </button>
+          </div>
+        ) : (
+          <p className="notice">결재가 모두 완료된 정비건입니다.</p>
+        )}
       </div>
       {canAdmin ? (
         <div className="section">
@@ -1366,9 +1614,6 @@ function WorkDetail({
             >
               <CalendarDays size={16} />Target
             </button>
-            <button type="button" onClick={async () => { await postJson(`/api/work-orders/${selected.id}/approve`, {}); await onChanged(); }}>
-              <CheckCircle2 size={16} />승인
-            </button>
             <button
               className="danger"
               type="button"
@@ -1385,7 +1630,7 @@ function WorkDetail({
           </div>
         </div>
       ) : (
-        <div className="notice">임원 계정은 처리 버튼 없이 현황과 보고 내용만 조회합니다.</div>
+        <div className="notice">배정과 Target 변경은 관리자만 처리합니다. 결재 단계가 도착하면 위 승인 버튼이 활성화됩니다.</div>
       )}
       <Timeline selected={selected} />
     </div>
@@ -1840,6 +2085,23 @@ function SimpleTable({ rows, title }: { rows: Record<string, unknown>[]; title: 
   );
 }
 
+function ApprovalLineView({ steps }: { steps: ApprovalStep[] }) {
+  return (
+    <ol className="approval-line" aria-label="완료 승인 결재라인">
+      {steps.map((step) => (
+        <li className={`approval-step ${approvalStatusClass(step.status)}`} key={step.id}>
+          <span className="approval-step-dot">{step.status === "APPROVED" ? <CheckCircle2 size={13} /> : null}</span>
+          <div>
+            <strong>{step.label}</strong>
+            <span>{step.approverName ?? "-"}</span>
+            <small>{approvalStatusLabel(step.status)}{step.approvedAt ? ` · ${formatDate(step.approvedAt)}` : ""}</small>
+          </div>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 function Input({ label, value, onChange, type = "text" }: { label: string; value: string; onChange: (value: string) => void; type?: string }) {
   return (
     <div className="field">
@@ -1883,6 +2145,121 @@ function Info({ label, value }: { label: string; value?: string | null }) {
 
 function hasAnyRole(user: AuthUser, roles: string[]) {
   return roles.some((role) => user.roles.includes(role));
+}
+
+function resolveApprovalLineForWorkOrder(row: WorkOrder, users: UserRow[]): ApprovalStep[] {
+  const existing = Array.isArray(row.approvalLine) ? row.approvalLine.filter(isApprovalStep) : [];
+  if (existing.length) return existing;
+  const admin = findDefaultApprover(users, ["SUPER_ADMIN", "ADMIN"], "ko.ms", "고민서 책임");
+  const executive = findDefaultApprover(users, ["EXECUTIVE"], "kim.ms", "김민식 전무");
+  const mechanicDone = Boolean(row.mechanicReportedAt || row.reports?.length);
+  const finalDone = Boolean(row.finalCompletedAt || row.status === "FINAL_COMPLETED" || row.status === "TEMPORARY_ACTION");
+  const adminDone = Boolean(row.adminApprovedAt || finalDone);
+  return [
+    {
+      id: "mechanic-report",
+      role: "MECHANIC",
+      label: "정비사 완료보고",
+      approverId: row.assignedMechanic?.id,
+      approverName: row.assignedMechanic?.name ?? "미배정",
+      approverTitle: row.assignedMechanic?.title,
+      status: mechanicDone ? "APPROVED" : "PENDING",
+      requestedAt: row.requestDate,
+      approvedAt: row.mechanicReportedAt ?? row.reports?.[0]?.submittedAt ?? null
+    },
+    {
+      id: "admin-approval",
+      role: "ADMIN",
+      label: "관리자 승인",
+      approverId: admin.id,
+      approverName: admin.name,
+      approverTitle: admin.title,
+      status: adminDone ? "APPROVED" : mechanicDone ? "PENDING" : "NOT_STARTED",
+      requestedAt: row.mechanicReportedAt ?? row.reports?.[0]?.submittedAt ?? null,
+      approvedAt: row.adminApprovedAt ?? null
+    },
+    {
+      id: "executive-approval",
+      role: "EXECUTIVE",
+      label: "임원 최종승인",
+      approverId: executive.id,
+      approverName: executive.name,
+      approverTitle: executive.title,
+      status: finalDone ? "APPROVED" : adminDone ? "PENDING" : "NOT_STARTED",
+      requestedAt: row.adminApprovedAt ?? null,
+      approvedAt: row.finalCompletedAt ?? null
+    }
+  ];
+}
+
+function isApprovalStep(value: unknown): value is ApprovalStep {
+  if (!value || typeof value !== "object") return false;
+  const item = value as Partial<ApprovalStep>;
+  return typeof item.id === "string" && typeof item.role === "string" && typeof item.label === "string" && typeof item.status === "string";
+}
+
+function findDefaultApprover(users: UserRow[], roleCodes: string[], preferredLoginId: string, fallbackName: string) {
+  const user =
+    users.find((item) => item.loginId === preferredLoginId) ??
+    users.find((item) => item.roles.some((role) => roleCodes.includes(role.role.code)));
+  return {
+    id: user?.id ?? "",
+    name: user ? `${user.name} ${user.title ?? ""}`.trim() : fallbackName,
+    title: user?.title ?? null
+  };
+}
+
+function makeApproverOptions(
+  users: UserRow[],
+  roleCodes: string[],
+  currentStep: ApprovalStep | undefined,
+  preferredLoginId: string,
+  fallbackLabel: string
+): SelectOption[] {
+  const map = new Map<string, string>();
+  const preferred = users.find((user) => user.loginId === preferredLoginId);
+  if (preferred) map.set(preferred.id, `${preferred.name} ${preferred.title ?? ""}`.trim());
+  for (const user of users) {
+    if (user.roles.some((role) => roleCodes.includes(role.role.code))) {
+      map.set(user.id, `${user.name} ${user.title ?? ""}`.trim());
+    }
+  }
+  if (currentStep?.approverId) {
+    map.set(currentStep.approverId, currentStep.approverName ?? fallbackLabel);
+  }
+  const options = Array.from(map, ([value, label]) => ({ value, label }));
+  return options.length ? options : [{ value: "", label: fallbackLabel }];
+}
+
+function isApprovalTarget(row: WorkOrder, users: UserRow[]) {
+  if (row.status === "FINAL_COMPLETED" || row.status === "CANCELLED" || row.status === "ARCHIVED") return false;
+  const step = nextApprovalStep(resolveApprovalLineForWorkOrder(row, users));
+  return Boolean(step && step.role !== "MECHANIC" && ["REPORT_SUBMITTED", "ADMIN_REVIEW", "TEMPORARY_ACTION"].includes(row.status));
+}
+
+function nextApprovalStep(steps: ApprovalStep[]) {
+  return steps.find((step) => step.status === "PENDING" && step.role !== "MECHANIC") ?? null;
+}
+
+function canApproveApprovalStep(user: AuthUser, step: ApprovalStep) {
+  if (user.roles.includes("SUPER_ADMIN")) return true;
+  if (step.approverId && step.approverId !== user.id) return false;
+  if (step.role === "ADMIN") return user.roles.includes("ADMIN");
+  if (step.role === "EXECUTIVE") return user.roles.includes("EXECUTIVE");
+  return false;
+}
+
+function approvalStatusClass(status: ApprovalStep["status"]) {
+  return status.toLowerCase().replace("_", "-");
+}
+
+function approvalStatusLabel(status: ApprovalStep["status"]) {
+  return {
+    NOT_STARTED: "대기 전",
+    PENDING: "승인 대기",
+    APPROVED: "승인 완료",
+    REJECTED: "반려"
+  }[status];
 }
 
 function initialMobilePreviewMode(user: AuthUser): MobilePreviewMode {
