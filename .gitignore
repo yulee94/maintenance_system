@@ -10,3 +10,16 @@ storage/uploads/**
 storage/backups/**
 !storage/uploads/.gitkeep
 !storage/backups/.gitkeep
+mobile/build/
+mobile/*.aab
+mobile/*.apk
+mobile/*.ipa
+mobile/*.p8
+mobile/*.mobileprovision
+mobile/google-play-service-account.json
+mobile/GoogleService-Info.plist
+mobile/google-services.json
+mobile/fastlane/report.xml
+mobile/fastlane/Preview.html
+mobile/fastlane/screenshots/
+mobile/fastlane/test_output/

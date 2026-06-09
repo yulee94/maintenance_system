@@ -1,13 +1,6 @@
 # Maintenance Mobile App
 
-React Native + Expo 기반 정비 렌탈 운영 모바일 앱이다. iOS와 Android를 같은 코드베이스에서 빠르게 출시하기 위해 Expo Router와 EAS Build 기준으로 구성한다.
-
-## 화면 구성
-
-- 오늘: 미결/완료/내 작업/긴급 요약, 오늘 진행 업무, AI 장비 경고
-- 정비건: 미결 정비건과 Priority 필터
-- 완료건: 완료/보관/취소 정비 이력
-- AI: 정비 문의, 유사 고장 이력, 보고서 초안 작성
+정비 렌탈 운영 시스템의 React Native + Expo 모바일 앱입니다. iOS와 Android를 같은 코드베이스로 개발하고, Development App / Staging App / Production App을 분리해서 운영합니다.
 
 ## 실행
 
@@ -18,25 +11,25 @@ copy .env.example .env
 npm run start
 ```
 
-실제 휴대폰에서 로컬 PC API에 접속하려면 `.env`의 `EXPO_PUBLIC_API_BASE_URL`을 PC 내부망 IP로 바꾼다.
+실제 휴대폰에서 로컬 PC API에 접속하려면 `.env`의 `DEV_API_URL`을 PC 내부망 IP로 바꿉니다.
 
 ```text
-EXPO_PUBLIC_API_BASE_URL=http://192.168.0.10:3000
+DEV_API_URL=http://192.168.0.10:3000
 ```
 
-## 환경 분리
+## 앱 환경
 
-| 앱 | API |
-| --- | --- |
-| 개발 앱 | dev API |
-| 테스트 앱 | staging API |
-| 출시 앱 | prod API |
+| 앱 | APP_ENV | API 설정 | 앱 식별자 예시 |
+| --- | --- | --- | --- |
+| Development App | `dev` | `DEV_API_URL` | `com.bitween.maintenance.dev` |
+| Staging App | `staging` | `STAGING_API_URL` | `com.bitween.maintenance.staging` |
+| Production App | `prod` | `PROD_API_URL` | `com.bitween.maintenance` |
 
-`eas.json`의 `development`, `preview`, `production` profile에 각 환경별 API URL을 넣는다.
+`app.config.js`가 `APP_ENV`를 기준으로 앱 이름, slug, scheme, iOS bundle id, Android package name, API URL을 자동 선택합니다.
 
-## API
+## 모바일 API
 
-모바일 앱은 웹 관리자 API를 직접 호출하지 않고 버전이 있는 Mobile App API만 사용한다.
+모바일 앱은 관리자 웹 API를 직접 호출하지 않고 버전이 있는 Mobile App API만 사용합니다.
 
 - `POST /api/v1/login`
 - `POST /api/v1/logout`
@@ -50,7 +43,7 @@ EXPO_PUBLIC_API_BASE_URL=http://192.168.0.10:3000
 - `POST /api/v1/ai`
 - `GET /api/v2/tasks`
 
-모바일 앱 공통 헤더:
+공통 헤더:
 
 ```text
 X-Client-Platform: mobile
@@ -58,76 +51,11 @@ X-Device-Id: {device-id}
 Authorization: Bearer {session-token}
 ```
 
-웹 쿠키 세션은 유지하되, 모바일 클라이언트는 로그인 응답의 `sessionToken`을 `expo-secure-store`에 저장하고 Bearer 토큰으로 인증한다.
-
-## 로그인 보안 흐름
-
-```text
-회사 계정 로그인
-  -> OTP 또는 MFA
-  -> 기기 등록
-  -> 사업장/권한 확인
-  -> 앱 사용
-```
-
-현재 앱은 `expo-secure-store`를 사용하며 iOS에서는 Keychain, Android에서는 Keystore 기반 보안 저장소를 사용한다. 세션 토큰과 기기 식별자는 `WHEN_UNLOCKED_THIS_DEVICE_ONLY` 옵션으로 저장해 다른 기기로 복원되지 않게 한다.
-
-앱 내부에 저장하면 안 되는 항목:
-
-- 비밀번호 원문
-- 주민등록번호
-- 카드번호
-- 민감정보 평문
-- 관리자 토큰 장기 저장
-
-꼭 필요한 토큰, 기기 식별자, 앱 잠금 설정값은 Secure Storage에만 저장한다.
-
-## 오프라인 모드
-
-현장 정비사는 네트워크가 끊겨도 작업 시작과 완료보고를 저장할 수 있다.
-
-```text
-앱 로컬 DB
-  -> 오프라인 중 작업 저장
-  -> 인터넷 복구
-  -> 중앙 서버와 동기화
-```
-
-앱은 `expo-sqlite`로 `maintenance_offline.db`를 만들고, 오프라인 작업을 `offline_requests` 큐에 저장한다. 저장 필드는 다음을 포함한다.
-
-- `request_id`
-- `sync_id`
-- `created_at`
-- `device_id`
-- `branch_id`
-- `operation_type`
-- `payload`
-
-서버는 `/api/v1/sync`에서 `device_id + request_id` 기준으로 중복 요청을 막는다. 같은 큐 항목이 인터넷 복구 후 여러 번 전송되어도 이미 처리된 결과를 재사용한다.
+세션 토큰과 기기 식별자는 `expo-secure-store`에 저장합니다. iOS는 Keychain, Android는 Keystore 기반 저장소를 사용하며, 비밀번호 원문과 민감정보 평문은 앱 내부에 저장하지 않습니다.
 
 ## 푸시 알림
 
-모바일 앱은 로그인 후 OS 푸시 권한을 요청하고 `expo-notifications`의 `getDevicePushTokenAsync()`로 네이티브 토큰을 받는다. iOS는 APNs 토큰, Android는 FCM 토큰을 서버에 등록한다.
-
-등록 흐름:
-
-```text
-앱 설치
-  -> FCM/APNs 토큰 발급
-  -> 서버에 device_token 저장
-  -> 이벤트 발생
-  -> 푸시 발송
-```
-
-서버에 저장하는 값:
-
-- `user_id`
-- `branch_id`
-- `device_id`
-- `push_token`
-- `platform`: `ios` 또는 `android`
-- `app_version`
-- `last_active_at`
+앱은 로그인 후 OS 푸시 권한을 요청하고 `expo-notifications`로 네이티브 FCM/APNs 토큰을 발급받아 `/api/v1/devices/register`에 등록합니다.
 
 필수 알림 유형:
 
@@ -139,16 +67,37 @@ Authorization: Bearer {session-token}
 - 예약 알림
 - 결제/정산 알림
 
+## 오프라인 모드
+
+현장 정비사는 네트워크가 끊겨도 작업 시작과 완료 보고를 로컬 SQLite 큐에 저장할 수 있습니다. 인터넷이 복구되면 `/api/v1/sync`로 중앙 서버와 동기화하며, 서버는 `device_id + request_id` 기준으로 중복 요청을 차단합니다.
+
 ## 빌드
 
-EAS CLI 설정 후 아래 방식으로 빌드한다.
-
 ```powershell
-npx eas build --profile preview --platform android
-npx eas build --profile preview --platform ios
+npx eas build --profile development --platform android
+npx eas build --profile staging --platform all
 npx eas build --profile production --platform all
 ```
 
-## 현재 범위
+기존 호환을 위해 `preview` profile은 `staging`을 상속합니다.
 
-현재 앱은 iOS/Android 공통 MVP다. 로그인, 정비건 조회, 작업 시작, 완료보고 제출, AI 질의가 연결되어 있다. 카메라 앨범 사진 첨부, push notification, 생체인증, 기기 등록 관리는 다음 모바일 릴리스에서 확장한다.
+## 배포 자동화
+
+GitHub Actions의 `.github/workflows/mobile-ci.yml`이 아래 순서를 담당합니다.
+
+```text
+Git push
+  -> 자동 테스트
+  -> iOS/Android EAS 빌드
+  -> TestFlight / Play Internal Testing 배포
+  -> 검수
+  -> 스토어 출시
+```
+
+필수 CI 설정:
+
+- GitHub Variables: `DEV_API_URL`, `STAGING_API_URL`, `PROD_API_URL`
+- GitHub Secrets: `EXPO_TOKEN`, `SENTRY_DSN`, `AMPLITUDE_API_KEY`
+- EAS 또는 Fastlane 자격증명: Apple Developer, App Store Connect, Google Play service account
+
+Fastlane lane은 `mobile/fastlane`에 있으며, EAS 외부에서 빌드 산출물을 TestFlight 또는 Play Console에 직접 업로드해야 할 때 사용합니다.

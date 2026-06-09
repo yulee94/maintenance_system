@@ -1,5 +1,6 @@
 import * as SecureStore from "expo-secure-store";
 import type { AiResponse, AuthUser, Branch, LoginResponse, ReportInput, Summary, TaskBundle, WorkOrder } from "./types";
+import { getApiBaseUrl } from "../config/environment";
 import { getNativePushRegistration, type NativePushRegistration } from "../notifications/push";
 
 type ApiEnvelope<T> = {
@@ -10,7 +11,6 @@ type ApiEnvelope<T> = {
 
 const TOKEN_KEY = "maintenance.mobile.sessionToken";
 const DEVICE_ID_KEY = "maintenance.mobile.deviceId";
-const API_BASE_URL = (process.env.EXPO_PUBLIC_API_BASE_URL ?? "http://localhost:3000").replace(/\/$/, "");
 const secureStoreOptions: SecureStore.SecureStoreOptions = {
   keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY
 };
@@ -22,7 +22,7 @@ export async function login(loginId: string, password: string, otpCode?: string)
   });
 
   if (data.mfaRequired && !data.sessionToken) {
-    throw new Error("OTP 또는 MFA 인증이 필요합니다. 모바일 MFA 화면을 연결한 뒤 인증번호를 입력해야 합니다.");
+    throw new Error("OTP 또는 MFA 인증이 필요합니다. 모바일 MFA 화면에서 인증번호를 입력해야 합니다.");
   }
 
   if (!data.sessionToken) {
@@ -78,13 +78,10 @@ export async function registerDevice(input: NativePushRegistration & { branchId?
       appVersion?: string | null;
       lastActiveAt: string;
     };
-  }>(
-    "/api/v1/devices/register",
-    {
-      method: "POST",
-      body: JSON.stringify(input)
-    }
-  );
+  }>("/api/v1/devices/register", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
 }
 
 export function startWorkOrder(id: string) {
@@ -109,7 +106,7 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}) {
   const token = await getSecureItem(TOKEN_KEY);
   const deviceId = await getDeviceId();
   const isForm = init.body instanceof FormData;
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetch(`${getApiBaseUrl()}${path}`, {
     ...init,
     headers: {
       ...(isForm ? {} : { "Content-Type": "application/json" }),
@@ -132,7 +129,7 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}) {
 }
 
 export function apiBaseUrl() {
-  return API_BASE_URL;
+  return getApiBaseUrl();
 }
 
 function toAuthUser(input: LoginResponse): AuthUser {

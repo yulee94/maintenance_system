@@ -7,27 +7,63 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
+      "channel": "dev",
       "env": {
-        "EXPO_PUBLIC_APP_ENV": "dev",
-        "EXPO_PUBLIC_API_BASE_URL": "https://api-dev-maintenance.example.co.kr"
+        "APP_ENV": "dev",
+        "DEV_API_URL": "https://api-dev-maintenance.example.co.kr",
+        "STAGING_API_URL": "https://api-staging-maintenance.example.co.kr",
+        "PROD_API_URL": "https://api-maintenance.example.co.kr",
+        "CRASH_REPORTING_PROVIDER": "sentry",
+        "FIREBASE_CRASHLYTICS_ENABLED": "false",
+        "ANALYTICS_PROVIDER": "firebase",
+        "REMOTE_CONFIG_PROVIDER": "api"
+      }
+    },
+    "staging": {
+      "distribution": "internal",
+      "channel": "staging",
+      "autoIncrement": true,
+      "env": {
+        "APP_ENV": "staging",
+        "DEV_API_URL": "https://api-dev-maintenance.example.co.kr",
+        "STAGING_API_URL": "https://api-staging-maintenance.example.co.kr",
+        "PROD_API_URL": "https://api-maintenance.example.co.kr",
+        "CRASH_REPORTING_PROVIDER": "sentry",
+        "FIREBASE_CRASHLYTICS_ENABLED": "false",
+        "ANALYTICS_PROVIDER": "firebase",
+        "REMOTE_CONFIG_PROVIDER": "api"
       }
     },
     "preview": {
-      "distribution": "internal",
-      "env": {
-        "EXPO_PUBLIC_APP_ENV": "staging",
-        "EXPO_PUBLIC_API_BASE_URL": "https://api-staging-maintenance.example.co.kr"
-      }
+      "extends": "staging"
     },
     "production": {
+      "channel": "production",
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_APP_ENV": "prod",
-        "EXPO_PUBLIC_API_BASE_URL": "https://api-maintenance.example.co.kr"
+        "APP_ENV": "prod",
+        "DEV_API_URL": "https://api-dev-maintenance.example.co.kr",
+        "STAGING_API_URL": "https://api-staging-maintenance.example.co.kr",
+        "PROD_API_URL": "https://api-maintenance.example.co.kr",
+        "CRASH_REPORTING_PROVIDER": "sentry",
+        "FIREBASE_CRASHLYTICS_ENABLED": "false",
+        "ANALYTICS_PROVIDER": "firebase",
+        "REMOTE_CONFIG_PROVIDER": "api"
       }
     }
   },
   "submit": {
-    "production": {}
+    "staging": {
+      "ios": {},
+      "android": {
+        "track": "internal"
+      }
+    },
+    "production": {
+      "ios": {},
+      "android": {
+        "track": "production"
+      }
+    }
   }
 }

@@ -1,0 +1,8 @@
+app_identifier(ENV.fetch("IOS_BUNDLE_ID", "com.bitween.maintenance"))
+package_name(ENV.fetch("ANDROID_PACKAGE_NAME", "com.bitween.maintenance"))
+
+apple_id(ENV["APPLE_ID"]) if ENV["APPLE_ID"]
+team_id(ENV["APPLE_TEAM_ID"]) if ENV["APPLE_TEAM_ID"]
+itc_team_id(ENV["APP_STORE_CONNECT_TEAM_ID"]) if ENV["APP_STORE_CONNECT_TEAM_ID"]
+
+json_key_file(ENV["GOOGLE_PLAY_JSON_KEY_PATH"]) if ENV["GOOGLE_PLAY_JSON_KEY_PATH"]

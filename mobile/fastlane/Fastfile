@@ -1,0 +1,70 @@
+default_platform(:ios)
+
+private_lane :find_ios_artifact do
+  ENV["IOS_ARTIFACT_PATH"] || Dir[File.expand_path("../build/**/*.ipa", __dir__)].first || Dir[File.expand_path("../*.ipa", __dir__)].first
+end
+
+private_lane :find_android_artifact do
+  ENV["ANDROID_ARTIFACT_PATH"] || Dir[File.expand_path("../build/**/*.aab", __dir__)].first || Dir[File.expand_path("../*.aab", __dir__)].first
+end
+
+platform :ios do
+  desc "Upload a staging or production IPA to TestFlight"
+  lane :beta do
+    artifact = find_ios_artifact
+    UI.user_error!("IOS_ARTIFACT_PATH 또는 mobile/build 아래 IPA 파일이 필요합니다.") unless artifact
+
+    upload_to_testflight(
+      ipa: artifact,
+      skip_waiting_for_build_processing: true
+    )
+  end
+
+  desc "Upload a reviewed production IPA to App Store Connect"
+  lane :release do
+    artifact = find_ios_artifact
+    UI.user_error!("IOS_ARTIFACT_PATH 또는 mobile/build 아래 IPA 파일이 필요합니다.") unless artifact
+
+    upload_to_app_store(
+      ipa: artifact,
+      submit_for_review: ENV["SUBMIT_FOR_REVIEW"] == "true",
+      automatic_release: ENV["AUTOMATIC_RELEASE"] == "true"
+    )
+  end
+end
+
+platform :android do
+  desc "Upload a staging AAB to Play Internal Testing"
+  lane :internal do
+    artifact = find_android_artifact
+    UI.user_error!("ANDROID_ARTIFACT_PATH 또는 mobile/build 아래 AAB 파일이 필요합니다.") unless artifact
+
+    upload_to_play_store(
+      aab: artifact,
+      track: "internal",
+      package_name: ENV.fetch("ANDROID_PACKAGE_NAME", "com.bitween.maintenance.staging"),
+      json_key: ENV["GOOGLE_PLAY_JSON_KEY_PATH"],
+      skip_upload_metadata: true,
+      skip_upload_changelogs: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true
+    )
+  end
+
+  desc "Upload a reviewed production AAB to Play production"
+  lane :production do
+    artifact = find_android_artifact
+    UI.user_error!("ANDROID_ARTIFACT_PATH 또는 mobile/build 아래 AAB 파일이 필요합니다.") unless artifact
+
+    upload_to_play_store(
+      aab: artifact,
+      track: "production",
+      package_name: ENV.fetch("ANDROID_PACKAGE_NAME", "com.bitween.maintenance"),
+      json_key: ENV["GOOGLE_PLAY_JSON_KEY_PATH"],
+      skip_upload_metadata: true,
+      skip_upload_changelogs: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true
+    )
+  end
+end
