@@ -237,6 +237,7 @@ const demoAccounts = [
 
 const tabs = [
   { id: "dashboard", label: "현황", icon: Gauge, allow: () => true },
+  { id: "appwork", label: "통합업무", icon: Smartphone, allow: () => true },
   { id: "daily", label: "일일현황", icon: ClipboardCheck, allow: (user: AuthUser) => hasAnyRole(user, ["SUPER_ADMIN", "ADMIN"]) },
   { id: "approval", label: "승인", icon: CheckCircle2, allow: (user: AuthUser) => hasAnyRole(user, ["SUPER_ADMIN", "ADMIN", "EXECUTIVE"]) },
   { id: "reception", label: "접수", icon: Plus, allow: (user: AuthUser) => hasAnyRole(user, ["SUPER_ADMIN", "ADMIN", "RECEPTIONIST"]) },
@@ -388,6 +389,16 @@ export function AppShell() {
         <main className="main desktop-workspace" aria-label="PC 업무 화면">
           {message ? <p className="notice">{message}</p> : null}
           {tab === "dashboard" ? <Dashboard summary={summary} workOrders={workOrders} user={user} select={setSelectedId} switchTab={setTab} /> : null}
+          {tab === "appwork" ? (
+            <UnifiedWorkAppPanel
+              user={user}
+              workOrders={workOrders}
+              onOpenWorkOrder={(id) => {
+                setSelectedId(id);
+                setTab(canAdmin || hasAnyRole(user, ["EXECUTIVE", "RECEPTIONIST"]) ? "workorders" : "mechanic");
+              }}
+            />
+          ) : null}
           {tab === "daily" ? <DailyStatusPanel workOrders={workOrders} users={users} onOpen={(id) => { setSelectedId(id); setTab("workorders"); }} /> : null}
           {tab === "approval" ? (
             <ApprovalPanel
@@ -622,6 +633,322 @@ function MobileAppPreview({
         </div>
       </div>
     </aside>
+  );
+}
+
+function UnifiedWorkAppPanel({
+  user,
+  workOrders,
+  onOpenWorkOrder
+}: {
+  user: AuthUser;
+  workOrders: WorkOrder[];
+  onOpenWorkOrder: (id: string) => void;
+}) {
+  const [screen, setScreen] = useState<MobilePreviewScreen>("today");
+  const [metricFilter, setMetricFilter] = useState<MobileMetricFilter>(null);
+  const [aiQuestion, setAiQuestion] = useState("시동은 걸리지만 출력이 떨어지는 경우 과거에는 어떻게 조치했나요?");
+  const [aiResult, setAiResult] = useState<MobileAiResult | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState("");
+  const openRows = useMemo(() => workOrders.filter((row) => !isClosed(row)), [workOrders]);
+  const completedRows = useMemo(() => workOrders.filter(isClosed), [workOrders]);
+  const urgentRows = useMemo(() => openRows.filter((row) => row.priorityLevel === "P1"), [openRows]);
+  const delayedRows = useMemo(() => workOrders.filter((row) => row.isDelayed || row.status === "DELAYED"), [workOrders]);
+  const reportWaiting = useMemo(() => workOrders.filter((row) => row.status === "REPORT_SUBMITTED"), [workOrders]);
+  const todayRows = useMemo(() => workOrders.filter((row) => isDailyStatusTarget(row, toDateKey(new Date()))), [workOrders]);
+  const aiAlerts = useMemo(() => buildMobileAiAlerts(workOrders), [workOrders]);
+  const isMechanicOnly = hasAnyRole(user, ["MECHANIC"]) && !hasAnyRole(user, ["SUPER_ADMIN", "ADMIN", "EXECUTIVE", "RECEPTIONIST"]);
+  const roleWorkRows = useMemo(() => {
+    if (hasAnyRole(user, ["SUPER_ADMIN", "ADMIN"])) {
+      return uniqueWorkOrders([
+        ...openRows.filter((row) => !row.assignedMechanic?.id),
+        ...reportWaiting,
+        ...delayedRows,
+        ...urgentRows,
+        ...openRows
+      ]);
+    }
+    if (hasAnyRole(user, ["EXECUTIVE"])) return noteworthyWorkOrders(workOrders);
+    if (hasAnyRole(user, ["MECHANIC"])) return openRows.filter((row) => row.assignedMechanic?.id === user.id);
+    return openRows;
+  }, [delayedRows, openRows, reportWaiting, urgentRows, user, workOrders]);
+  const todayForRole = isMechanicOnly ? todayRows.filter((row) => row.assignedMechanic?.id === user.id) : todayRows;
+  const rowsForView = metricFilter
+    ? metricFilter === "open"
+      ? openRows
+      : metricFilter === "completed"
+        ? completedRows
+        : metricFilter === "urgent"
+          ? urgentRows
+          : roleWorkRows
+    : screen === "completed"
+      ? completedRows
+      : screen === "today"
+        ? todayForRole
+        : roleWorkRows;
+  const sortedRows = sortWorkOrders(rowsForView, screen === "completed" || metricFilter === "completed" ? "requestDate" : "priority");
+  const screenTitle = metricFilter
+    ? metricFilter === "open"
+      ? "미결 업무"
+      : metricFilter === "completed"
+        ? "완료건"
+        : metricFilter === "urgent"
+          ? "긴급 업무"
+          : "내 작업"
+    : screen === "today" ? "오늘 업무" : screen === "workorders" ? "정비건" : screen === "completed" ? "완료건" : "AI 업무지원";
+
+  function showMetricRows(filter: Exclude<MobileMetricFilter, null>) {
+    setMetricFilter(filter);
+    setScreen(filter === "completed" ? "completed" : "workorders");
+  }
+
+  async function askAi(event?: React.FormEvent) {
+    event?.preventDefault();
+    const question = aiQuestion.trim();
+    if (!question) return;
+    setAiLoading(true);
+    setAiError("");
+    try {
+      setAiResult(await postJson<MobileAiResult>("/api/mobile/ai", { question }));
+    } catch (error) {
+      setAiError(error instanceof Error ? error.message : "AI 답변을 불러오지 못했습니다.");
+    } finally {
+      setAiLoading(false);
+    }
+  }
+
+  return (
+    <div className="section unified-work-panel">
+      <div className="section-header">
+        <div>
+          <h2>PC 통합업무</h2>
+          <p>휴대폰 앱의 오늘, 정비건, 완료건, AI 기능을 PC에서도 같은 기준으로 사용합니다.</p>
+        </div>
+        <span className="chip blue"><Monitor size={14} />PC 적용</span>
+      </div>
+      <div className="app-tab-strip" role="tablist" aria-label="PC 통합업무 화면 전환">
+        <button className={screen === "today" && !metricFilter ? "active" : ""} type="button" onClick={() => { setScreen("today"); setMetricFilter(null); }}>
+          <CalendarDays size={16} />오늘
+        </button>
+        <button className={screen === "workorders" && !metricFilter ? "active" : ""} type="button" onClick={() => { setScreen("workorders"); setMetricFilter(null); }}>
+          <ClipboardList size={16} />정비건
+        </button>
+        <button className={screen === "completed" && !metricFilter ? "active" : ""} type="button" onClick={() => { setScreen("completed"); setMetricFilter(null); }}>
+          <CheckCircle2 size={16} />완료건
+        </button>
+        <button className={screen === "ai" ? "active" : ""} type="button" onClick={() => { setScreen("ai"); setMetricFilter(null); }}>
+          <Bot size={16} />AI
+        </button>
+      </div>
+      <div className="app-filter-grid">
+        <button className={metricFilter === "open" ? "active" : ""} type="button" onClick={() => showMetricRows("open")}>
+          <span>미결</span>
+          <strong>{openRows.length}</strong>
+          <small>진행/대기 전체</small>
+        </button>
+        <button className={metricFilter === "completed" ? "active" : ""} type="button" onClick={() => showMetricRows("completed")}>
+          <span>완료</span>
+          <strong>{completedRows.length}</strong>
+          <small>최종 완료/보관</small>
+        </button>
+        <button className={metricFilter === "work" ? "active" : ""} type="button" onClick={() => showMetricRows("work")}>
+          <span>내 작업</span>
+          <strong>{roleWorkRows.length}</strong>
+          <small>역할 기준 업무</small>
+        </button>
+        <button className={metricFilter === "urgent" ? "active" : ""} type="button" onClick={() => showMetricRows("urgent")}>
+          <span>긴급</span>
+          <strong>{urgentRows.length}</strong>
+          <small>P1 미완료</small>
+        </button>
+      </div>
+      {screen === "ai" ? (
+        <DesktopAiPanel
+          user={user}
+          alerts={aiAlerts}
+          question={aiQuestion}
+          result={aiResult}
+          loading={aiLoading}
+          error={aiError}
+          onQuestion={setAiQuestion}
+          onAsk={askAi}
+          onOpenWorkOrder={onOpenWorkOrder}
+        />
+      ) : (
+        <div className="unified-work-layout">
+          <section className="section unified-work-list">
+            <div className="section-header">
+              <div>
+                <h2>{screenTitle}</h2>
+                <p>휴대폰 앱과 같은 기준으로 필터링된 정비건입니다. 항목을 선택하면 PC 상세 화면에서 변경/승인/보고를 이어서 처리합니다.</p>
+              </div>
+              <span className="chip green">{sortedRows.length}건</span>
+            </div>
+            <WorkList workOrders={sortedRows.slice(0, 20)} onSelect={onOpenWorkOrder} />
+          </section>
+          <aside className="unified-work-side">
+            <DesktopAiAlertList alerts={aiAlerts.slice(0, 5)} onOpenWorkOrder={onOpenWorkOrder} />
+            <DesktopRolePolicy user={user} />
+          </aside>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DesktopAiPanel({
+  user,
+  alerts,
+  question,
+  result,
+  loading,
+  error,
+  onQuestion,
+  onAsk,
+  onOpenWorkOrder
+}: {
+  user: AuthUser;
+  alerts: MobileAiAlert[];
+  question: string;
+  result: MobileAiResult | null;
+  loading: boolean;
+  error: string;
+  onQuestion: (value: string) => void;
+  onAsk: (event?: React.FormEvent) => void;
+  onOpenWorkOrder: (id: string) => void;
+}) {
+  const examples = [
+    "시동은 걸리는데 출력이 떨어질 때 과거 조치 추천",
+    "완료보고 작성 도와줘",
+    "일일 보고서 초안 만들어줘",
+    "내 KPI가 어떻게 돼?"
+  ];
+
+  return (
+    <div className="desktop-ai-grid">
+      <DesktopAiAlertList alerts={alerts} onOpenWorkOrder={onOpenWorkOrder} />
+      <section className="desktop-ai-card desktop-ai-main">
+        <div className="section-header">
+          <div>
+            <h2>AI 업무지원</h2>
+            <p>정비 문의, 유사 이력, 완료보고, 운영 보고서 작성을 역할 권한에 맞춰 처리합니다.</p>
+          </div>
+          <span className={`chip ${result?.denied ? "red" : "blue"}`}>{result?.source === "openai" ? "GPT" : "업무 데이터"}</span>
+        </div>
+        <form className="desktop-ai-form" onSubmit={onAsk}>
+          <label htmlFor="desktop-ai-question">정비/보고/업무 문의</label>
+          <textarea
+            id="desktop-ai-question"
+            value={question}
+            onChange={(event) => onQuestion(event.target.value)}
+            placeholder="예: 290호기 출력 저하 유사 이력과 조치 방법 알려줘"
+          />
+          <button className="primary" type="submit" disabled={loading}>
+            <Send size={15} />
+            {loading ? "분석 중" : "AI 추천"}
+          </button>
+        </form>
+        <div className="desktop-ai-examples">
+          {examples.map((example) => (
+            <button type="button" key={example} onClick={() => onQuestion(example)}>
+              {example}
+            </button>
+          ))}
+        </div>
+        {error ? <p className="error">{error}</p> : null}
+        <div className="desktop-ai-answer">
+          {result ? (
+            <>
+              <div className={`mobile-ai-source ${result.denied ? "denied" : ""}`}>
+                <span>{result.denied ? "권한 정책 차단" : result.source === "openai" ? "GPT 연결 답변" : "업무 AI 답변"}</span>
+                <strong>{result.denied ? "조회 불가" : `${result.matches.length}개 유사 이력 참조`}</strong>
+              </div>
+              <pre>{result.answer}</pre>
+              {result.matches.length ? (
+                <div className="desktop-ai-matches">
+                  {result.matches.slice(0, 4).map((match) => (
+                    <div key={match.requestNo}>
+                      <span>{match.requestNo} · {match.customer}</span>
+                      <strong>{match.faultDescription}</strong>
+                      <p>{match.actionTaken}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </>
+          ) : (
+            <div className="mobile-report-card">
+              <span>PC 적용 완료</span>
+              <strong>모바일 AI 탭과 같은 API와 권한 정책을 사용합니다.</strong>
+              <p>정비사는 KPI 요청이 차단되고, 관리자/임원/최고관리자만 운영 보고와 KPI 자료를 요청할 수 있습니다.</p>
+            </div>
+          )}
+        </div>
+      </section>
+      <DesktopRolePolicy user={user} />
+    </div>
+  );
+}
+
+function DesktopAiAlertList({ alerts, onOpenWorkOrder }: { alerts: MobileAiAlert[]; onOpenWorkOrder: (id: string) => void }) {
+  return (
+    <section className="desktop-ai-card">
+      <div className="mobile-ai-alert-head">
+        <span><AlertTriangle size={14} />AI 자동 경고</span>
+        <strong>{alerts.length ? `${alerts.length}건` : "정상"}</strong>
+      </div>
+      <div className="desktop-ai-alert-list">
+        {alerts.length ? (
+          alerts.map((alert) => (
+            <button className={`desktop-ai-alert ${alert.level}`} key={alert.id} type="button" onClick={() => onOpenWorkOrder(alert.primaryWorkOrderId)}>
+              <span>{alert.level === "critical" ? "점검 필요" : alert.level === "warning" ? "주의 필요" : "관찰"}</span>
+              <strong>{alert.title}</strong>
+              <p>{alert.message}</p>
+            </button>
+          ))
+        ) : (
+          <div className="desktop-ai-alert empty">
+            <span>관찰</span>
+            <strong>반복 고장 경고 없음</strong>
+            <p>현재 데이터에서는 동일 장비 반복 고장이나 재발 신호가 뚜렷하지 않습니다.</p>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function DesktopRolePolicy({ user }: { user: AuthUser }) {
+  return (
+    <section className="desktop-ai-card">
+      <div className="mobile-ai-role-head">
+        <span>현재 권한</span>
+        <strong>{formatRoles(user.roles)}</strong>
+      </div>
+      <div className="desktop-role-grid">
+        <div>
+          <span>정비사</span>
+          <strong>정비 문의, 내 작업 완료보고</strong>
+          <p>KPI/성과 조회 불가</p>
+        </div>
+        <div>
+          <span>관리자</span>
+          <strong>운영 보고, KPI, 승인 자료</strong>
+          <p>계정/감사 자료 제한</p>
+        </div>
+        <div>
+          <span>임원</span>
+          <strong>보고자료, KPI, 리스크 요약</strong>
+          <p>계정 변경 불가</p>
+        </div>
+        <div>
+          <span>최고관리자</span>
+          <strong>전체 자료, 계정/권한/감사</strong>
+          <p>민감 자료 포함</p>
+        </div>
+      </div>
+    </section>
   );
 }
 
