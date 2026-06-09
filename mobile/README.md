@@ -107,3 +107,9 @@ Fastlane lane은 `mobile/fastlane`에 있으며, EAS 외부에서 빌드 산출�
 출시 제출 전에는 [App Store Review Checklist](../docs/APP_STORE_REVIEW_CHECKLIST.md)를 기준으로 심사용 계정, 개인정보 처리방침 URL, 권한 요청 설명, 빈 화면 smoke test, 결제 정책 해당 여부를 확인합니다.
 
 심사 메모 초안은 [mobile/release/APP_REVIEW_NOTES.md](./release/APP_REVIEW_NOTES.md)에 있습니다.
+
+스토어 메타데이터와 테스트 사업장 자료는 [mobile/release/store-metadata/ko-KR](./release/store-metadata/ko-KR)에 있습니다. 앱 아이콘과 스크린샷 초안은 아래 명령으로 재생성할 수 있습니다.
+
+```powershell
+node scripts/generate-mobile-review-assets.mjs
+```

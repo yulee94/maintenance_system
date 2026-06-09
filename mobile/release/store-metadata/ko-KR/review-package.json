@@ -1,0 +1,72 @@
+{
+  "app": {
+    "name": "정비 운영",
+    "subtitle": "정비 접수, 배정, 완료보고, 승인까지 한 번에 관리",
+    "description": "정비사, 관리자, 임원이 정비 업무를 모바일에서 확인하고 완료보고, 승인, AI 업무 지원까지 처리하는 업무용 앱입니다.",
+    "category": "Business",
+    "privacy_policy_url": "https://maintenance.example.co.kr/privacy",
+    "terms_url": "https://maintenance.example.co.kr/terms",
+    "support_url": "https://maintenance.example.co.kr/support",
+    "review_notes_url": "https://maintenance.example.co.kr/app-review"
+  },
+  "support": {
+    "email": "support@maintenance.example.co.kr",
+    "phone": "02-0000-0000",
+    "hours": "평일 09:00-18:00"
+  },
+  "test_accounts": [
+    {
+      "role": "최고관리자/관리자",
+      "login_id": "ko.ms",
+      "password": "Admin!2026Test",
+      "features": ["계정/권한", "작업 배정", "승인", "KPI", "보고서"]
+    },
+    {
+      "role": "임원",
+      "login_id": "kim.ms",
+      "password": "Exec!2026Test",
+      "features": ["KPI", "경영 보고", "최종 승인"]
+    },
+    {
+      "role": "사업장 관리자",
+      "login_id": "son.hn",
+      "password": "Admin2!2026Test",
+      "features": ["작업 배정", "계획업무 승인", "완료보고 승인"]
+    },
+    {
+      "role": "정비사",
+      "login_id": "jegal.ts",
+      "password": "Mech!2026Test",
+      "features": ["오늘 업무", "정비건", "완료보고", "AI"]
+    },
+    {
+      "role": "접수자",
+      "login_id": "park.jw",
+      "password": "Reception!2026",
+      "features": ["접수", "현황 확인"]
+    }
+  ],
+  "permissions": [
+    {
+      "permission": "push_notifications",
+      "reason": "작업 배정, 승인 요청, 공지사항, 장애 알림을 받기 위해 사용합니다."
+    },
+    {
+      "permission": "camera",
+      "reason": "정비 완료보고에 현장 장비 상태와 고장 부위 사진을 첨부하기 위해 사용합니다."
+    },
+    {
+      "permission": "photo_library",
+      "reason": "기존에 촬영한 정비 사진 또는 동영상을 완료보고에 첨부하기 위해 사용합니다."
+    }
+  ],
+  "payment_policy_note": "현재 앱은 소비자 대상 인앱 결제나 디지털 콘텐츠 판매를 제공하지 않습니다. 결제/정산 알림은 내부 업무 알림입니다.",
+  "review_path": [
+    "로그인",
+    "오늘 탭에서 배정/긴급/완료 현황 확인",
+    "정비건 탭에서 상세 진입",
+    "완료보고 작성 및 사진 첨부 화면 확인",
+    "AI 탭에서 정비 문의와 권한 제한 확인",
+    "관리자 계정으로 승인/KPI/보고 확인"
+  ]
+}

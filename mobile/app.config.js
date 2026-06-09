@@ -41,6 +41,7 @@ module.exports = ({ config } = {}) => {
     name: profile.name,
     slug: profile.slug,
     scheme: profile.scheme,
+    icon: "./assets/icon.png",
     ios: {
       ...baseConfig.ios,
       bundleIdentifier: profile.iosBundleIdentifier,
@@ -57,6 +58,11 @@ module.exports = ({ config } = {}) => {
     android: {
       ...baseConfig.android,
       package: profile.androidPackage,
+      adaptiveIcon: {
+        ...(baseConfig.android?.adaptiveIcon || {}),
+        foregroundImage: "./assets/adaptive-icon.png",
+        backgroundColor: "#0f172a"
+      },
       blockedPermissions: [
         ...(baseConfig.android?.blockedPermissions || []),
         "android.permission.ACCESS_BACKGROUND_LOCATION",
@@ -71,8 +77,15 @@ module.exports = ({ config } = {}) => {
       apiUrls,
       review: {
         privacyPolicyUrl: process.env.APP_PRIVACY_POLICY_URL || "https://maintenance.example.co.kr/privacy",
+        termsUrl: process.env.APP_TERMS_URL || "https://maintenance.example.co.kr/terms",
         supportUrl: process.env.APP_SUPPORT_URL || "https://maintenance.example.co.kr/support",
-        reviewNotesUrl: process.env.APP_REVIEW_NOTES_URL || "https://maintenance.example.co.kr/app-review"
+        reviewNotesUrl: process.env.APP_REVIEW_NOTES_URL || "https://maintenance.example.co.kr/app-review",
+        supportEmail: process.env.APP_SUPPORT_EMAIL || "support@maintenance.example.co.kr",
+        supportPhone: process.env.APP_SUPPORT_PHONE || "02-0000-0000",
+        supportHours: process.env.APP_SUPPORT_HOURS || "평일 09:00-18:00",
+        appDescription:
+          process.env.APP_REVIEW_DESCRIPTION ||
+          "정비사, 관리자, 임원이 정비 접수, 배정, 완료보고, 승인, AI 업무 지원, 운영 보고를 처리하는 업무용 앱입니다."
       },
       crashReporting: {
         provider: process.env.CRASH_REPORTING_PROVIDER || "sentry",

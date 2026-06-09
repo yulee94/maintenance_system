@@ -18,8 +18,12 @@
         "ANALYTICS_PROVIDER": "firebase",
         "REMOTE_CONFIG_PROVIDER": "api",
         "APP_PRIVACY_POLICY_URL": "https://maintenance.example.co.kr/privacy",
+        "APP_TERMS_URL": "https://maintenance.example.co.kr/terms",
         "APP_SUPPORT_URL": "https://maintenance.example.co.kr/support",
-        "APP_REVIEW_NOTES_URL": "https://maintenance.example.co.kr/app-review"
+        "APP_REVIEW_NOTES_URL": "https://maintenance.example.co.kr/app-review",
+        "APP_SUPPORT_EMAIL": "support@maintenance.example.co.kr",
+        "APP_SUPPORT_PHONE": "02-0000-0000",
+        "APP_SUPPORT_HOURS": "평일 09:00-18:00"
       }
     },
     "staging": {
@@ -36,8 +40,12 @@
         "ANALYTICS_PROVIDER": "firebase",
         "REMOTE_CONFIG_PROVIDER": "api",
         "APP_PRIVACY_POLICY_URL": "https://maintenance.example.co.kr/privacy",
+        "APP_TERMS_URL": "https://maintenance.example.co.kr/terms",
         "APP_SUPPORT_URL": "https://maintenance.example.co.kr/support",
-        "APP_REVIEW_NOTES_URL": "https://maintenance.example.co.kr/app-review"
+        "APP_REVIEW_NOTES_URL": "https://maintenance.example.co.kr/app-review",
+        "APP_SUPPORT_EMAIL": "support@maintenance.example.co.kr",
+        "APP_SUPPORT_PHONE": "02-0000-0000",
+        "APP_SUPPORT_HOURS": "평일 09:00-18:00"
       }
     },
     "preview": {
@@ -56,8 +64,12 @@
         "ANALYTICS_PROVIDER": "firebase",
         "REMOTE_CONFIG_PROVIDER": "api",
         "APP_PRIVACY_POLICY_URL": "https://maintenance.example.co.kr/privacy",
+        "APP_TERMS_URL": "https://maintenance.example.co.kr/terms",
         "APP_SUPPORT_URL": "https://maintenance.example.co.kr/support",
-        "APP_REVIEW_NOTES_URL": "https://maintenance.example.co.kr/app-review"
+        "APP_REVIEW_NOTES_URL": "https://maintenance.example.co.kr/app-review",
+        "APP_SUPPORT_EMAIL": "support@maintenance.example.co.kr",
+        "APP_SUPPORT_PHONE": "02-0000-0000",
+        "APP_SUPPORT_HOURS": "평일 09:00-18:00"
       }
     }
   },

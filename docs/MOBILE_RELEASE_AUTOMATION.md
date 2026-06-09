@@ -107,8 +107,11 @@ GitHub Secrets:
 앱 심사 관련 URL:
 
 - `APP_PRIVACY_POLICY_URL`: 개인정보 처리방침 공개 URL
+- `APP_TERMS_URL`: 이용약관 공개 URL
 - `APP_SUPPORT_URL`: 앱 지원/문의 URL
 - `APP_REVIEW_NOTES_URL`: 심사자 안내 URL
+- `APP_SUPPORT_EMAIL`: 고객센터 이메일
+- `APP_SUPPORT_PHONE`: 고객센터 전화번호
 
 저장소에 커밋하면 안 되는 항목:
 
@@ -130,3 +133,4 @@ GitHub Secrets:
 - 개인정보 처리방침과 위치/푸시 권한 안내 문구 검토
 - dev/staging/prod API CORS, rate limit, 권한 체크 검증
 - 심사용 계정, OTP/MFA 안내, 권한 요청 사유, 결제 정책 설명을 `APP_STORE_REVIEW_CHECKLIST.md` 기준으로 검토
+- 앱 아이콘과 스크린샷 초안은 `node scripts/generate-mobile-review-assets.mjs`로 생성하고, 정식 제출 전 실제 staging 빌드 캡처로 교체

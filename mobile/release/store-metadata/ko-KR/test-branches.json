@@ -1,0 +1,42 @@
+{
+  "purpose": "스토어 심사자가 역할별 권한과 사업장별 데이터를 확인하기 위한 staging 테스트 사업장 데이터",
+  "branches": [
+    {
+      "branch_id": "HQ-001",
+      "name": "본사 운영센터",
+      "region": "본사",
+      "type": "headquarters",
+      "review_scenarios": ["전체 사업장 조회", "계정/권한 관리", "KPI 보고", "최종 승인"]
+    },
+    {
+      "branch_id": "SEOUL-001",
+      "name": "수도권 파일럿 사업장",
+      "region": "수도권",
+      "type": "pilot_branch",
+      "review_scenarios": ["미결 정비건", "긴급 P1 정비건", "작업 배정", "사진 첨부 완료보고"]
+    },
+    {
+      "branch_id": "BUSAN-001",
+      "name": "영남 물류센터",
+      "region": "영남권",
+      "type": "warehouse_branch",
+      "review_scenarios": ["완료 정비건", "장비 누적 정비 이력", "반복 고장 AI 경고"]
+    },
+    {
+      "branch_id": "GWANGJU-001",
+      "name": "호남 지점",
+      "region": "호남권",
+      "type": "regional_branch",
+      "review_scenarios": ["계획업무 요청", "관리자 반려", "수정 알림", "최종 확정"]
+    }
+  ],
+  "minimum_seed_requirements": {
+    "open_work_orders": 5,
+    "in_progress_work_orders": 2,
+    "completed_work_orders": 3,
+    "approval_pending_work_orders": 2,
+    "rejected_or_revision_requested_items": 1,
+    "photo_attachment_examples": 1,
+    "ai_permission_denial_examples": 1
+  }
+}

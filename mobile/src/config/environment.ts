@@ -21,8 +21,13 @@ type RuntimeExtra = {
   };
   review?: {
     privacyPolicyUrl?: string;
+    termsUrl?: string;
     supportUrl?: string;
     reviewNotesUrl?: string;
+    supportEmail?: string;
+    supportPhone?: string;
+    supportHours?: string;
+    appDescription?: string;
   };
 };
 

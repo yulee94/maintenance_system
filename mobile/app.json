@@ -6,6 +6,7 @@
     "orientation": "portrait",
     "scheme": "maintenance",
     "userInterfaceStyle": "light",
+    "icon": "./assets/icon.png",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.bitween.maintenance"
@@ -13,6 +14,7 @@
     "android": {
       "package": "com.bitween.maintenance",
       "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0f172a"
       }
     },

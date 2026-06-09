@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Maintenance Rental System",
-  description: "정비/렌탈 업무 접수, 배정, 완료보고, KPI 관리 시스템",
+  description: "정비/렌탈 업무 접수, 배정, 완료보고, KPI 관리를 지원하는 운영 시스템입니다.",
   manifest: "/manifest.webmanifest"
 };
 
