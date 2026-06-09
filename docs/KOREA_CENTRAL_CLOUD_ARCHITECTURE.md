@@ -128,6 +128,34 @@ maintenance-staging
 maintenance-prod
 ```
 
+## 모바일 앱 배포 채널
+
+모바일 앱도 서버 환경과 동일하게 3개 채널로 분리합니다. 각 앱은 지정된 API만 호출해야 하며, 앱 내부에서 사용자가 임의로 운영 API를 바꾸는 구조는 사용하지 않습니다.
+
+| 앱 채널 | 연결 API | 목적 | 배포 대상 |
+| --- | --- | --- | --- |
+| 개발 앱 | `dev API` | 개발자 기능 개발, 내부 실험, 빠른 수정 확인 | 개발자와 내부 개발 담당자 |
+| 테스트 앱 | `staging API` | 현장 담당자 검수, 관리자 승인 흐름 테스트, 릴리스 전 QA | 검수 담당자와 제한된 파일럿 사용자 |
+| 출시 앱 | `prod API` | 실제 전국 사업장 운영 | 실제 사용자 |
+
+모바일 분리 원칙:
+
+- 개발 앱은 `dev` 서버만 호출합니다.
+- 테스트 앱은 `staging` 서버만 호출합니다.
+- 출시 앱은 `prod` 서버만 호출합니다.
+- 앱별 API base URL은 빌드 시점 환경 변수 또는 배포 설정으로 고정합니다.
+- 앱 이름, 아이콘 배지, bundle id/package name은 환경별로 구분해 설치 실수를 줄입니다.
+- push notification, deep link, OAuth redirect, crash report, analytics도 환경별 프로젝트를 분리합니다.
+- `prod` 앱에는 테스트 계정 자동 로그인, 더미 데이터, 디버그 메뉴를 넣지 않습니다.
+
+권장 API URL 예시:
+
+```text
+https://api-dev-maintenance.example.co.kr
+https://api-staging-maintenance.example.co.kr
+https://api-maintenance.example.co.kr
+```
+
 ## 현재 적용 범위
 
 현재 변경은 아키텍처 기준 문서 추가입니다. 실제 DB 스키마, API 라우트, 인증 로직은 변경하지 않습니다. 다음 구현 단계에서 `Branch`, `UserBranch`, `branchId` 컬럼, 서버 측 권한 필터, 사업장별 테스트를 별도 작업으로 추가합니다.
