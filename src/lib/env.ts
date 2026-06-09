@@ -15,5 +15,14 @@ export const appEnv = {
   apnsTeamId: process.env.APNS_TEAM_ID,
   apnsBundleId: process.env.APNS_BUNDLE_ID,
   apnsPrivateKey: process.env.APNS_PRIVATE_KEY,
-  apnsUseSandbox: process.env.APNS_USE_SANDBOX === "true"
+  apnsUseSandbox: process.env.APNS_USE_SANDBOX === "true",
+  mobileMinimumSupportedVersion: process.env.MOBILE_MINIMUM_SUPPORTED_VERSION ?? "0.1.0",
+  mobileLatestVersion: process.env.MOBILE_LATEST_VERSION ?? "0.1.0",
+  mobileForceUpdateRequired: process.env.MOBILE_FORCE_UPDATE_REQUIRED === "true",
+  mobileMaintenanceMode: process.env.MOBILE_MAINTENANCE_MODE === "true",
+  mobileNoticeMessage:
+    process.env.MOBILE_NOTICE_MESSAGE ??
+    "정비 운영 앱을 안정적으로 이용하기 위해 최신 버전 사용을 권장합니다.",
+  mobileIosStoreUrl: process.env.MOBILE_IOS_STORE_URL ?? "https://apps.apple.com/app/id0000000000",
+  mobileAndroidStoreUrl: process.env.MOBILE_ANDROID_STORE_URL ?? "https://play.google.com/store/apps/details?id=com.bitween.maintenance"
 };

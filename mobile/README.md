@@ -31,6 +31,7 @@ DEV_API_URL=http://192.168.0.10:3000
 
 모바일 앱은 관리자 웹 API를 직접 호출하지 않고 버전이 있는 Mobile App API만 사용합니다.
 
+- `GET /api/v1/mobile-config`
 - `POST /api/v1/login`
 - `POST /api/v1/logout`
 - `GET /api/v1/me`
@@ -101,6 +102,10 @@ Git push
 - EAS 또는 Fastlane 자격증명: Apple Developer, App Store Connect, Google Play service account
 
 Fastlane lane은 `mobile/fastlane`에 있으며, EAS 외부에서 빌드 산출물을 TestFlight 또는 Play Console에 직접 업로드해야 할 때 사용합니다.
+
+## 서버 버전 정책
+
+앱은 실행 시 `/api/v1/mobile-config`를 먼저 호출해 최소 지원 버전, 최신 버전, 강제 업데이트, 서버 점검 모드, 공지 메시지를 확인합니다. 자세한 운영 기준은 [MOBILE_VERSION_POLICY.md](../docs/MOBILE_VERSION_POLICY.md)를 봅니다.
 
 ## 스토어 심사 준비
 

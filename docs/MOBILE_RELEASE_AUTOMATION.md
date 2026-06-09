@@ -94,6 +94,11 @@ GitHub Variables:
 - `FIREBASE_CRASHLYTICS_ENABLED`
 - `ANALYTICS_PROVIDER`
 - `REMOTE_CONFIG_PROVIDER`
+- `MOBILE_MINIMUM_SUPPORTED_VERSION`
+- `MOBILE_LATEST_VERSION`
+- `MOBILE_FORCE_UPDATE_REQUIRED`
+- `MOBILE_MAINTENANCE_MODE`
+- `MOBILE_NOTICE_MESSAGE`
 
 GitHub Secrets:
 
@@ -134,3 +139,4 @@ GitHub Secrets:
 - dev/staging/prod API CORS, rate limit, 권한 체크 검증
 - 심사용 계정, OTP/MFA 안내, 권한 요청 사유, 결제 정책 설명을 `APP_STORE_REVIEW_CHECKLIST.md` 기준으로 검토
 - 앱 아이콘과 스크린샷 초안은 `node scripts/generate-mobile-review-assets.mjs`로 생성하고, 정식 제출 전 실제 staging 빌드 캡처로 교체
+- `/api/v1/mobile-config`에서 최소 지원 버전, 최신 버전, 강제 업데이트, 점검 모드 응답을 검증

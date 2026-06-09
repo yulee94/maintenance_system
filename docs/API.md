@@ -24,6 +24,7 @@
 - `POST /api/v1/tasks/:id/start`: 모바일 작업 시작
 - `POST /api/v1/tasks/:id/report`: 모바일 완료보고 제출
 - `POST /api/v1/sync`: 모바일 오프라인 작업 동기화, `request_id + device_id` 기준 중복 처리 방지
+- `GET /api/v1/mobile-config`: 앱 버전 정책, 강제 업데이트, 점검 모드, 공지 메시지 조회
 - `POST /api/v1/ai`: 모바일 AI 문의/보고서 작성 보조
 
 모바일 앱 공통 헤더:
