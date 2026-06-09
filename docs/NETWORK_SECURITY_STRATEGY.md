@@ -116,6 +116,54 @@ Rate limit은 사용자 불편을 줄이면서 공격과 오남용을 막는 수
 
 Rate limit 초과는 감사 로그와 보안 로그에 남깁니다.
 
+## 모바일 앱 API 보안
+
+모바일 앱 API는 HTTPS, 토큰 인증, 기기 식별, 권한 체크를 모두 통과해야 합니다. 어느 하나라도 실패하면 업무 데이터를 반환하지 않습니다.
+
+요청 검증 순서:
+
+```text
+모바일 앱 요청
+  -> HTTPS 강제
+  -> access token 검증
+  -> refresh token / 세션 상태 검증
+  -> 기기 식별자와 trusted device 상태 검증
+  -> 사용자 role 확인
+  -> branch_id / 권역 / 협력사 scope 확인
+  -> API 기능별 권한 체크
+  -> 감사 로그 저장
+```
+
+필수 기준:
+
+| 항목 | 기준 |
+| --- | --- |
+| HTTPS | 모바일 앱은 `dev`, `staging`, `prod` 모두 HTTPS API만 호출 |
+| 토큰 인증 | access token은 짧게 유지하고 refresh token은 기기 단위로 관리 |
+| 기기 식별 | 앱 설치 또는 최초 로그인 시 기기 식별자를 등록하고 서버에서 신뢰 상태를 확인 |
+| 권한 체크 | 모든 API에서 role과 `branch_id` scope를 서버에서 다시 검사 |
+| 기기 폐기 | 분실, 퇴사, 협력사 계약 종료 시 해당 기기의 refresh token과 trusted device를 폐기 |
+| 재인증 | 완료보고, 승인, 권한 변경, 민감 보고서 다운로드 전 MFA 또는 생체 재인증 검토 |
+
+모바일 토큰 운영 원칙:
+
+- access token은 탈취 피해를 줄이기 위해 만료 시간을 짧게 둡니다.
+- refresh token은 서버에 해시로 저장하고, 기기별로 발급/폐기할 수 있어야 합니다.
+- refresh token rotation을 적용해 재사용 공격을 탐지합니다.
+- 로그아웃, 기기 분실 신고, 계정 비활성화 시 해당 기기의 refresh token을 즉시 폐기합니다.
+- 모바일 앱에는 운영 API 키나 관리자 secret을 포함하지 않습니다.
+
+권장 감사 로그:
+
+```text
+mobile.login
+mobile.token.refresh
+mobile.device.register
+mobile.device.revoke
+mobile.permission.denied
+mobile.sensitive_action.reauth
+```
+
 ## 로그인 실패 제한
 
 현재 코드에는 로그인 실패 횟수 기반 잠금 로직이 있으므로, 운영 설계에서도 이를 유지하고 강화합니다.
