@@ -156,6 +156,10 @@ https://api-staging-maintenance.example.co.kr
 https://api-maintenance.example.co.kr
 ```
 
+## 운영 조합 기준
+
+클라우드, 컨테이너, DB, 파일 저장소, 보안, 배포, 모바일 출시의 권장 조합은 [정비 렌탈 운영시스템 권장 운영 조합](./RECOMMENDED_OPERATION_STACK.md)을 기준으로 합니다. 이 문서는 한국 리전 중앙 클라우드와 사업장별 권한/데이터 분리를 설명하고, 권장 운영 조합 문서는 실제 배포 선택 기준을 보완합니다.
+
 ## 현재 적용 범위
 
 현재 변경은 아키텍처 기준 문서 추가입니다. 실제 DB 스키마, API 라우트, 인증 로직은 변경하지 않습니다. 다음 구현 단계에서 `Branch`, `UserBranch`, `branchId` 컬럼, 서버 측 권한 필터, 사업장별 테스트를 별도 작업으로 추가합니다.

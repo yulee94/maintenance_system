@@ -186,6 +186,10 @@ result
 rollback_of
 ```
 
+## 운영 조합 기준
+
+배포 자동화의 기본 운영 조합은 [정비 렌탈 운영시스템 권장 운영 조합](./RECOMMENDED_OPERATION_STACK.md)을 따릅니다. 초기에는 Docker 기반 API 서버와 Managed Container 배포를 우선하고, 규모가 커지면 Kubernetes로 확장합니다. 인프라는 Terraform으로 관리하는 방향을 기준으로 둡니다.
+
 ## 현재 적용 범위
 
 이번 문서는 배포 자동화 설계 기준을 고정하기 위한 문서입니다. 현재 변경에서는 실제 GitHub Actions, GitLab CI, Kubernetes, ECS, Docker Compose 운영 스크립트, 인프라 코드는 수정하지 않습니다. 다음 구현 단계에서 선택한 CI/CD 플랫폼에 맞춰 pipeline 파일과 배포 스크립트를 별도 작업으로 추가합니다.

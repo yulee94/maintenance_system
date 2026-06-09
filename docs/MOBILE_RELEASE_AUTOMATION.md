@@ -56,6 +56,10 @@ STAGING_API_URL=https://api-staging-maintenance.example.co.kr
 PROD_API_URL=https://api-maintenance.example.co.kr
 ```
 
+## 운영 조합 기준
+
+모바일 앱 배포는 [정비 렌탈 운영시스템 권장 운영 조합](./RECOMMENDED_OPERATION_STACK.md)을 기준으로 맞춥니다. 직원용 앱은 비공개 배포를 우선하고, 고객용 앱으로 확장할 때 App Store와 Google Play 공개 출시를 준비합니다.
+
 ## Fastlane
 
 파일:

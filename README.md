@@ -80,6 +80,10 @@ OPENAI_MODEL="gpt-4.1-mini"
 http://localhost:3000
 ```
 
+## 운영 권장 조합
+
+정비 렌탈 운영시스템의 권장 운영 기준은 [docs/RECOMMENDED_OPERATION_STACK.md](./docs/RECOMMENDED_OPERATION_STACK.md)에 정리했습니다. AWS Seoul 또는 NAVER Cloud Korea, Docker 기반 API 서버, Managed Container 우선 운영, PostgreSQL Multi-AZ, S3/Object Storage, WAF + VPN/Zero Trust + MFA + 감사 로그, GitHub/GitLab + CI/CD + Terraform, React Native 모바일 앱, FCM + APNs 푸시를 기준으로 둡니다.
+
 ## 데모 계정
 
 로그인 화면에서 아래 계정을 버튼으로 바로 선택할 수 있습니다.
