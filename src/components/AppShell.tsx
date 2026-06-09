@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   BarChart3,
@@ -1840,6 +1840,7 @@ function CalendarPanel() {
   const [rows, setRows] = useState<WorkOrder[]>([]);
   const [month, setMonth] = useState(() => new Date());
   const [selectedDate, setSelectedDate] = useState(() => toDateKey(new Date()));
+  const detailRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     void api<WorkOrder[]>("/api/calendar/tasks").then(setRows);
   }, []);
@@ -1849,6 +1850,14 @@ function CalendarPanel() {
     [rows, selectedDate]
   );
   const monthLabel = `${month.getFullYear()}년 ${month.getMonth() + 1}월`;
+
+  function selectDate(key: string, date: Date) {
+    setSelectedDate(key);
+    if (date.getMonth() !== month.getMonth() || date.getFullYear() !== month.getFullYear()) {
+      setMonth(new Date(date.getFullYear(), date.getMonth(), 1));
+    }
+    window.setTimeout(() => detailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+  }
 
   return (
     <div className="section">
@@ -1867,29 +1876,53 @@ function CalendarPanel() {
         {["일", "월", "화", "수", "목", "금", "토"].map((day) => <div className="calendar-weekday" key={day}>{day}</div>)}
         {monthDays.map((date) => {
           const key = toDateKey(date);
-          const dayRows = rows.filter((row) => isDateWithinSchedule(key, row)).slice(0, 4);
+          const dayRows = sortWorkOrders(rows.filter((row) => isDateWithinSchedule(key, row)), "priority");
+          const isSelected = selectedDate === key;
+          const visibleRows = isSelected ? dayRows : dayRows.slice(0, 3);
+          const hiddenCount = Math.max(dayRows.length - visibleRows.length, 0);
           const muted = date.getMonth() !== month.getMonth();
           return (
-            <button
-              type="button"
-              className={`calendar-day ${selectedDate === key ? "selected" : ""} ${muted ? "muted-day" : ""}`}
+            <div
+              role="button"
+              tabIndex={0}
+              className={`calendar-day ${isSelected ? "selected" : ""} ${muted ? "muted-day" : ""}`}
               key={key}
-              onClick={() => setSelectedDate(key)}
+              onClick={() => selectDate(key, date)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  selectDate(key, date);
+                }
+              }}
             >
-              <span className="calendar-date">{date.getDate()}</span>
+              <div className="calendar-day-head">
+                <span className="calendar-date">{date.getDate()}</span>
+                {dayRows.length ? <span className="calendar-count">진행 {dayRows.length}건</span> : null}
+              </div>
               <div className="schedule-stack">
-                {dayRows.map((row) => (
-                  <span className={`schedule-bar ${priorityClass[row.priorityLevel]}`} key={row.id} title={`${row.requestNo} ${row.customer?.name ?? ""}`}>
-                    {isSameDayKey(key, row.requestDate) ? row.requestNo : row.assignedMechanic?.name ?? row.requestNo}
+                {visibleRows.map((row) => (
+                  <span className={`schedule-bar ${priorityClass[row.priorityLevel]}`} key={row.id} title={calendarScheduleTitle(row, key)}>
+                    {calendarScheduleLabel(row)}
                   </span>
                 ))}
-                {rows.filter((row) => isDateWithinSchedule(key, row)).length > 4 ? <span className="calendar-more">+ more</span> : null}
+                {hiddenCount ? (
+                  <button
+                    className="calendar-more"
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      selectDate(key, date);
+                    }}
+                  >
+                    +{hiddenCount} more
+                  </button>
+                ) : null}
               </div>
-            </button>
+            </div>
           );
         })}
       </div>
-      <div className="section">
+      <div className="section calendar-detail-section" ref={detailRef}>
         <div className="section-header">
           <div>
             <h2>{selectedDate} 진행 내용</h2>
@@ -2500,6 +2533,16 @@ function dailyDetailText(row: WorkOrder) {
   if (row.diagnosisResult || latestReport?.diagnosisResult) return `진단: ${row.diagnosisResult ?? latestReport?.diagnosisResult}`;
   if (row.comments?.[0]?.body) return `최근 메모: ${row.comments[0].body}`;
   return "등록된 조치/보고 내용이 아직 없습니다.";
+}
+
+function calendarScheduleLabel(row: WorkOrder) {
+  const place = row.customer?.name ?? row.site?.name ?? equipmentLabel(row);
+  return `${row.requestNo} · ${place}`;
+}
+
+function calendarScheduleTitle(row: WorkOrder, key: string) {
+  const mechanic = row.assignedMechanic?.name ?? "미배정";
+  return `${calendarScheduleLabel(row)} · ${labelStatus(row.status)} · ${priorityLabel[row.priorityLevel]} · ${mechanic} · ${dailyStatusReason(row, key)}`;
 }
 
 function dailyActionText(row: WorkOrder, key: string) {
