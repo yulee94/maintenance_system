@@ -1,0 +1,33 @@
+{
+  "cli": {
+    "version": ">= 16.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_APP_ENV": "dev",
+        "EXPO_PUBLIC_API_BASE_URL": "https://api-dev-maintenance.example.co.kr"
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_APP_ENV": "staging",
+        "EXPO_PUBLIC_API_BASE_URL": "https://api-staging-maintenance.example.co.kr"
+      }
+    },
+    "production": {
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_APP_ENV": "prod",
+        "EXPO_PUBLIC_API_BASE_URL": "https://api-maintenance.example.co.kr"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}

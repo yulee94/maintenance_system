@@ -68,7 +68,7 @@ export async function verifySession(token: string): Promise<AuthUser | null> {
 }
 
 export async function getCurrentUserFromRequest(request: NextRequest): Promise<AuthUser | null> {
-  const token = request.cookies.get(SESSION_COOKIE)?.value;
+  const token = request.cookies.get(SESSION_COOKIE)?.value ?? bearerTokenFromRequest(request);
   if (!token) return null;
   return verifySession(token);
 }
@@ -96,6 +96,12 @@ export function canAccessKpi(user: AuthUser) {
 
 export function canAdmin(user: AuthUser) {
   return user.roles.includes(RoleCode.SUPER_ADMIN) || user.roles.includes(RoleCode.ADMIN);
+}
+
+function bearerTokenFromRequest(request: NextRequest) {
+  const authorization = request.headers.get("authorization");
+  const match = authorization?.match(/^Bearer\s+(.+)$/i);
+  return match?.[1];
 }
 
 export const sessionCookieOptions = {

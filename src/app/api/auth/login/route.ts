@@ -16,11 +16,12 @@ const schema = z.object({
 export async function POST(request: NextRequest) {
   try {
     const input = await readJson(request, schema);
+    const isMobileClient = request.headers.get("x-client-platform") === "mobile";
     if (appEnv.demoMode) {
       const demoUser = await demoLogin(input.loginId, input.password);
       if (!demoUser) throw new ApiError(401, "아이디 또는 비밀번호를 확인하세요.");
       const token = await signSession(demoUser);
-      const response = ok(demoUser);
+      const response = ok(isMobileClient ? { ...demoUser, sessionToken: token, expiresInHours: 8 } : demoUser);
       response.cookies.set(SESSION_COOKIE, token, sessionCookieOptions);
       return response;
     }
@@ -71,7 +72,7 @@ export async function POST(request: NextRequest) {
       mustChangePassword: user.mustChangePassword
     };
     const token = await signSession(authUser);
-    const response = ok(authUser);
+    const response = ok(isMobileClient ? { ...authUser, sessionToken: token, expiresInHours: 8 } : authUser);
     response.cookies.set(SESSION_COOKIE, token, sessionCookieOptions);
     await auditLog({ user: authUser, request, action: "auth.login", targetType: "user", targetId: user.id });
     return response;
