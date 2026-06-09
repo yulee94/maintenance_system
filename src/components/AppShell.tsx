@@ -85,6 +85,50 @@ type WorkOrder = {
   targetChangeRequests?: Record<string, unknown>[];
 };
 
+type EquipmentAsset = {
+  id: string;
+  normalizedNo?: string | null;
+  equipmentNo?: string | null;
+  placementNo?: string | null;
+  customerName: string;
+  siteName: string;
+  manufacturer?: string | null;
+  powerType?: string | null;
+  kind?: string | null;
+  status?: string | null;
+  managerName?: string | null;
+  location?: string | null;
+  operationType?: string | null;
+  spec?: string | null;
+  tonnage?: string | null;
+  maker?: string | null;
+  modelName?: string | null;
+  serialNo?: string | null;
+  year?: string | null;
+  operatingHours?: string | null;
+  vehicleRegistrationNo?: string | null;
+  workOrderCount: number;
+  openWorkOrderCount: number;
+  completedWorkOrderCount: number;
+  urgentWorkOrderCount: number;
+  delayedWorkOrderCount: number;
+  repeatSignalCount: number;
+  riskLevel: "CRITICAL" | "WATCH" | "NORMAL";
+  recommendation: string;
+  lastWorkOrderAt?: string | null;
+  lastFaultDescription?: string | null;
+  lastActionTaken?: string | null;
+  recentWorkOrders: {
+    id: string;
+    requestNo: string;
+    requestDate: string;
+    faultDescription: string;
+    priorityLevel: string;
+    status: string;
+    assignedMechanicName?: string | null;
+  }[];
+};
+
 type ApprovalStep = {
   id: string;
   role: "MECHANIC" | "ADMIN" | "EXECUTIVE";
@@ -243,6 +287,7 @@ const tabs = [
   { id: "reception", label: "접수", icon: Plus, allow: (user: AuthUser) => hasAnyRole(user, ["SUPER_ADMIN", "ADMIN", "RECEPTIONIST"]) },
   { id: "workorders", label: "정비건", icon: ClipboardList, allow: (user: AuthUser) => hasAnyRole(user, ["SUPER_ADMIN", "ADMIN", "EXECUTIVE", "RECEPTIONIST"]) },
   { id: "mechanic", label: "내 작업", icon: Wrench, allow: (user: AuthUser) => hasAnyRole(user, ["MECHANIC"]) },
+  { id: "equipment", label: "장비관리", icon: Wrench, allow: (user: AuthUser) => hasAnyRole(user, ["SUPER_ADMIN", "ADMIN", "EXECUTIVE"]) },
   { id: "calendar", label: "일정", icon: CalendarDays, allow: () => true },
   { id: "kpi", label: "보고/KPI", icon: BarChart3, allow: (user: AuthUser) => hasAnyRole(user, ["SUPER_ADMIN", "ADMIN", "EXECUTIVE"]) },
   { id: "admin", label: "관리", icon: UserCog, allow: (user: AuthUser) => hasAnyRole(user, ["SUPER_ADMIN", "ADMIN"]) },
@@ -417,6 +462,7 @@ export function AppShell() {
             <WorkOrdersPanel workOrders={workOrders} selected={selected} users={users} currentUser={user} canAdmin={canAdmin} onSelect={setSelectedId} onChanged={refresh} />
           ) : null}
           {tab === "mechanic" ? <MechanicPanel user={user} workOrders={workOrders} selected={selected} onSelect={setSelectedId} onChanged={refresh} /> : null}
+          {tab === "equipment" ? <EquipmentPanel canManage={canAdmin} onOpenWorkOrder={(id) => { setSelectedId(id); setTab("workorders"); }} /> : null}
           {tab === "calendar" ? <CalendarPanel /> : null}
           {tab === "kpi" ? <KpiPanel enabled={canKpi} workOrders={workOrders} /> : null}
           {tab === "admin" ? <AdminPanel currentUser={user} users={users} onChanged={refresh} /> : null}
@@ -2270,6 +2316,227 @@ function CalendarPanel() {
   );
 }
 
+function EquipmentPanel({ canManage, onOpenWorkOrder }: { canManage: boolean; onOpenWorkOrder: (id: string) => void }) {
+  const [assets, setAssets] = useState<EquipmentAsset[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [riskFilter, setRiskFilter] = useState("ALL");
+  const [message, setMessage] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    status: "",
+    managerName: "",
+    location: "",
+    operationType: "",
+    operatingHours: ""
+  });
+
+  async function loadAssets() {
+    const rows = await api<EquipmentAsset[]>("/api/equipment");
+    setAssets(rows);
+    setSelectedId((current) => (current && rows.some((row) => row.id === current) ? current : sortEquipmentAssets(rows)[0]?.id ?? null));
+  }
+
+  useEffect(() => {
+    void loadAssets().catch((error) => setMessage(error instanceof Error ? error.message : "장비 목록을 불러오지 못했습니다."));
+  }, []);
+
+  const selected = assets.find((asset) => asset.id === selectedId) ?? assets[0] ?? null;
+
+  useEffect(() => {
+    if (!selected) return;
+    setForm({
+      status: selected.status ?? "",
+      managerName: selected.managerName ?? "",
+      location: selected.location ?? selected.siteName ?? "",
+      operationType: selected.operationType ?? "",
+      operatingHours: selected.operatingHours ?? ""
+    });
+  }, [selected?.id]);
+
+  const filtered = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    return sortEquipmentAssets(assets
+      .filter((asset) => riskFilter === "ALL" || asset.riskLevel === riskFilter)
+      .filter((asset) => {
+        if (!normalized) return true;
+        return [
+          asset.normalizedNo,
+          asset.equipmentNo,
+          asset.placementNo,
+          asset.customerName,
+          asset.siteName,
+          asset.modelName,
+          asset.serialNo,
+          asset.vehicleRegistrationNo,
+          asset.managerName
+        ]
+          .join(" ")
+          .toLowerCase()
+          .includes(normalized);
+      }));
+  }, [assets, query, riskFilter]);
+
+  useEffect(() => {
+    if (!filtered.length) return;
+    if (!selectedId || !filtered.some((asset) => asset.id === selectedId)) setSelectedId(filtered[0].id);
+  }, [filtered, selectedId]);
+
+  const criticalCount = assets.filter((asset) => asset.riskLevel === "CRITICAL").length;
+  const watchCount = assets.filter((asset) => asset.riskLevel === "WATCH").length;
+  const openCount = assets.reduce((sum, asset) => sum + asset.openWorkOrderCount, 0);
+  const totalWorkOrders = assets.reduce((sum, asset) => sum + asset.workOrderCount, 0);
+
+  async function importMasterList() {
+    setMessage("");
+    try {
+      await postJson("/api/equipment/import-master-list", {});
+      await loadAssets();
+      setMessage("Master List 기준 장비 목록을 갱신했습니다.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Master List import에 실패했습니다.");
+    }
+  }
+
+  async function saveAsset(event: React.FormEvent) {
+    event.preventDefault();
+    if (!selected || !canManage) return;
+    setSaving(true);
+    setMessage("");
+    try {
+      await patchJson(`/api/equipment/${selected.id}`, form);
+      setAssets((current) => current.map((asset) => (asset.id === selected.id ? { ...asset, ...form } : asset)));
+      setMessage(`${equipmentDisplayName(selected)} 관리 정보가 저장되었습니다.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "장비 정보를 저장하지 못했습니다.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="section equipment-panel">
+      <div className="section-header">
+        <div>
+          <h2>전체 장비/지게차 자산관리</h2>
+          <p>Master List 장비와 누적 정비 데이터를 연결해 잦은 고장, 교체/폐각 검토 대상을 확인합니다.</p>
+        </div>
+        <div className="toolbar">
+          {canManage ? <button type="button" onClick={importMasterList}><Upload size={16} />Master List 갱신</button> : null}
+          <a className="icon-button" href="/api/exports/equipment-history" download><Download size={16} />장비 이력 엑셀</a>
+        </div>
+      </div>
+      {message ? <p className="notice">{message}</p> : null}
+      <div className="equipment-summary-grid">
+        <Insight title="전체 장비" value={`${assets.length}대`} text="Master List 기준 전체 자산" tone="blue" />
+        <Insight title="교체/폐각 검토" value={`${criticalCount}대`} text="반복 고장, 긴급/지연 누적 장비" tone="red" />
+        <Insight title="정밀점검 대상" value={`${watchCount}대`} text="예방정비 강화 필요 장비" tone="amber" />
+        <Insight title="미결 정비" value={`${openCount}건`} text={`누적 정비 이력 ${totalWorkOrders}건`} tone="green" />
+      </div>
+      <div className="equipment-toolbar">
+        <div className="field">
+          <label>장비 검색</label>
+          <div className="search-inline">
+            <Search size={16} />
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="호기, 장비 No, 고객, 모델, 차대번호 검색" />
+          </div>
+        </div>
+        <Select
+          label="관리 판단"
+          value={riskFilter}
+          onChange={setRiskFilter}
+          options={[
+            { value: "ALL", label: "전체" },
+            { value: "CRITICAL", label: "교체/폐각 검토" },
+            { value: "WATCH", label: "정밀점검 대상" },
+            { value: "NORMAL", label: "일반 관리" }
+          ]}
+        />
+      </div>
+      <div className="equipment-layout">
+        <section className="equipment-list" aria-label="장비 목록">
+          {filtered.length ? (
+            filtered.map((asset) => (
+              <button
+                className={`equipment-row ${asset.riskLevel.toLowerCase()} ${asset.id === selected?.id ? "selected" : ""}`}
+                key={asset.id}
+                type="button"
+                onClick={() => setSelectedId(asset.id)}
+              >
+                <div>
+                  <span className={`chip ${equipmentRiskChip(asset.riskLevel)}`}>{equipmentRiskLabel(asset.riskLevel)}</span>
+                  <strong>{equipmentDisplayName(asset)} · {asset.customerName}</strong>
+                  <p>{asset.modelName || "모델 미등록"} · {asset.tonnage || "톤수 미등록"} · {asset.siteName}</p>
+                </div>
+                <div className="equipment-row-stats">
+                  <span>정비 {asset.workOrderCount}</span>
+                  <span>미결 {asset.openWorkOrderCount}</span>
+                  <span>긴급 {asset.urgentWorkOrderCount}</span>
+                  <span>지연 {asset.delayedWorkOrderCount}</span>
+                </div>
+              </button>
+            ))
+          ) : (
+            <p className="notice">조건에 맞는 장비가 없습니다.</p>
+          )}
+        </section>
+        <aside className="equipment-detail">
+          {selected ? (
+            <>
+              <div className={`equipment-decision ${selected.riskLevel.toLowerCase()}`}>
+                <span>{equipmentRiskLabel(selected.riskLevel)}</span>
+                <strong>{selected.recommendation}</strong>
+                <p>{selected.lastFaultDescription || "누적 정비 이력이 없으면 일반 자산관리 대상으로 유지합니다."}</p>
+              </div>
+              <div className="detail-grid">
+                <Info label="장비/호기" value={equipmentDisplayName(selected)} />
+                <Info label="장비 No" value={selected.equipmentNo} />
+                <Info label="배치 No" value={selected.placementNo} />
+                <Info label="고객/현장" value={`${selected.customerName} · ${selected.siteName}`} />
+                <Info label="모델/톤수" value={`${selected.modelName || "-"} · ${selected.tonnage || "-"}`} />
+                <Info label="차대번호" value={selected.serialNo} />
+                <Info label="차량등록" value={selected.vehicleRegistrationNo} />
+                <Info label="년식/가동시간" value={`${selected.year || "-"} · ${selected.operatingHours || "-"}`} />
+              </div>
+              <form className="equipment-manage-form" onSubmit={saveAsset}>
+                <div className="section-header">
+                  <h3>관리 정보</h3>
+                  {!canManage ? <span className="chip">관리자 수정 가능</span> : null}
+                </div>
+                <Input label="상태" value={form.status} onChange={(value) => setForm((current) => ({ ...current, status: value }))} />
+                <Input label="담당자" value={form.managerName} onChange={(value) => setForm((current) => ({ ...current, managerName: value }))} />
+                <Input label="배치장소" value={form.location} onChange={(value) => setForm((current) => ({ ...current, location: value }))} />
+                <Input label="운영구분" value={form.operationType} onChange={(value) => setForm((current) => ({ ...current, operationType: value }))} />
+                <Input label="가동시간" value={form.operatingHours} onChange={(value) => setForm((current) => ({ ...current, operatingHours: value }))} />
+                <button className="primary" type="submit" disabled={!canManage || saving}>{saving ? "저장 중" : "관리정보 저장"}</button>
+              </form>
+              <div className="equipment-history">
+                <div className="section-header">
+                  <h3>최근 정비 이력</h3>
+                  <span className="chip">{selected.workOrderCount}건</span>
+                </div>
+                {selected.recentWorkOrders.length ? (
+                  selected.recentWorkOrders.map((row) => (
+                    <button className={`equipment-history-row ${priorityClass[row.priorityLevel as WorkOrder["priorityLevel"]] ?? ""}`} key={row.id} type="button" onClick={() => onOpenWorkOrder(row.id)}>
+                      <span>{formatDate(row.requestDate)} · {row.requestNo} · {labelStatus(row.status)}</span>
+                      <strong>{row.faultDescription}</strong>
+                      <p>{row.assignedMechanicName || "담당 미지정"} · {priorityLabel[row.priorityLevel as WorkOrder["priorityLevel"]] ?? row.priorityLevel}</p>
+                    </button>
+                  ))
+                ) : (
+                  <p className="notice">누적 정비 이력이 없습니다.</p>
+                )}
+              </div>
+            </>
+          ) : (
+            <p className="notice">장비를 선택하세요.</p>
+          )}
+        </aside>
+      </div>
+    </div>
+  );
+}
+
 function KpiPanel({ enabled, workOrders }: { enabled: boolean; workOrders: WorkOrder[] }) {
   const [mechanics, setMechanics] = useState<Record<string, unknown>[]>([]);
   const [priorities, setPriorities] = useState<Record<string, unknown>[]>([]);
@@ -2808,6 +3075,38 @@ function equipmentKey(row: WorkOrder) {
 
 function equipmentLabel(row: WorkOrder) {
   return row.equipmentInput ?? row.equipmentNoNormalized ?? row.equipment?.equipmentNo ?? row.equipment?.serialNo ?? "장비 미지정";
+}
+
+function equipmentDisplayName(asset: EquipmentAsset) {
+  return asset.normalizedNo || asset.equipmentNo || asset.placementNo || asset.serialNo || "장비 미지정";
+}
+
+function equipmentRiskLabel(riskLevel: EquipmentAsset["riskLevel"]) {
+  return {
+    CRITICAL: "교체/폐각 검토",
+    WATCH: "정밀점검 대상",
+    NORMAL: "일반 관리"
+  }[riskLevel];
+}
+
+function equipmentRiskChip(riskLevel: EquipmentAsset["riskLevel"]) {
+  return {
+    CRITICAL: "red",
+    WATCH: "amber",
+    NORMAL: "green"
+  }[riskLevel];
+}
+
+function equipmentRiskRank(riskLevel: EquipmentAsset["riskLevel"]) {
+  return {
+    CRITICAL: 0,
+    WATCH: 1,
+    NORMAL: 2
+  }[riskLevel];
+}
+
+function sortEquipmentAssets(rows: EquipmentAsset[]) {
+  return [...rows].sort((a, b) => equipmentRiskRank(a.riskLevel) - equipmentRiskRank(b.riskLevel) || b.workOrderCount - a.workOrderCount || a.customerName.localeCompare(b.customerName, "ko"));
 }
 
 function initialMobilePreviewMode(user: AuthUser): MobilePreviewMode {

@@ -4,6 +4,7 @@ import { WorkOrderStatus } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { appEnv } from "@/lib/env";
 import { demoMechanicKpi, demoPriorityKpi, demoWorkOrders } from "@/lib/demo";
+import { numberFromEquipmentText, pick, readMasterListRows } from "@/lib/excel";
 
 type ExportFilter = "all" | "pending" | "completed";
 
@@ -25,6 +26,23 @@ type ExportWorkOrder = {
   diagnosisResult: string;
   memo: string;
   isDelayed: boolean;
+};
+
+type ExportEquipmentAsset = {
+  assetNo: string;
+  equipmentNo: string;
+  placementNo: string;
+  customer: string;
+  site: string;
+  modelName: string;
+  serialNo: string;
+  tonnage: string;
+  status: string;
+  managerName: string;
+  location: string;
+  operationType: string;
+  operatingHours: string;
+  workOrders: ExportWorkOrder[];
 };
 
 const activeStatuses = new Set<WorkOrderStatus>([
@@ -225,6 +243,90 @@ export async function buildExecutiveReportWorkbook() {
   return workbook;
 }
 
+export async function buildEquipmentHistoryWorkbook() {
+  const assets = await getExportEquipmentAssets();
+  const workbook = new ExcelJS.Workbook();
+  setupWorkbook(workbook);
+
+  const summary = workbook.addWorksheet("장비 판단 요약");
+  summary.columns = equipmentSummaryColumns();
+  styleHeader(summary, "A1:W1");
+
+  for (const asset of assets) {
+    const metrics = equipmentMetrics(asset.workOrders);
+    const row = summary.addRow({
+      assetNo: asset.assetNo,
+      equipmentNo: asset.equipmentNo,
+      placementNo: asset.placementNo,
+      customer: asset.customer,
+      site: asset.site,
+      modelName: asset.modelName,
+      serialNo: asset.serialNo,
+      tonnage: asset.tonnage,
+      status: asset.status,
+      managerName: asset.managerName,
+      location: asset.location,
+      operationType: asset.operationType,
+      operatingHours: asset.operatingHours,
+      riskLevel: equipmentRiskLabel(metrics.riskLevel),
+      recommendation: equipmentRecommendation(metrics.riskLevel),
+      total: asset.workOrders.length,
+      open: metrics.openCount,
+      completed: metrics.completedCount,
+      urgent: metrics.urgentCount,
+      delayed: metrics.delayedCount,
+      repeatSignal: metrics.repeatSignalCount,
+      lastFault: asset.workOrders[0]?.faultDescription ?? "",
+      lastAction: asset.workOrders[0]?.actionTaken || asset.workOrders[0]?.diagnosisResult || ""
+    });
+    styleRiskCell(row.getCell("riskLevel"), metrics.riskLevel);
+  }
+  finishTable(summary);
+
+  const history = workbook.addWorksheet("장비별 정비 이력");
+  history.columns = equipmentHistoryColumns();
+  styleHeader(history, "A1:Q1");
+  for (const asset of assets) {
+    if (!asset.workOrders.length) {
+      history.addRow({
+        assetNo: asset.assetNo,
+        riskLevel: equipmentRiskLabel(equipmentMetrics(asset.workOrders).riskLevel),
+        customer: asset.customer,
+        site: asset.site,
+        modelName: asset.modelName,
+        serialNo: asset.serialNo
+      });
+      continue;
+    }
+    const riskLevel = equipmentMetrics(asset.workOrders).riskLevel;
+    for (const workOrder of asset.workOrders) {
+      const row = history.addRow({
+        assetNo: asset.assetNo,
+        riskLevel: equipmentRiskLabel(riskLevel),
+        customer: asset.customer,
+        site: asset.site,
+        modelName: asset.modelName,
+        serialNo: asset.serialNo,
+        requestNo: workOrder.requestNo,
+        requestDate: format(workOrder.requestDate, "yyyy-MM-dd"),
+        priority: priorityLabel[workOrder.priority] ?? workOrder.priority,
+        status: statusLabel[workOrder.status] ?? workOrder.status,
+        mechanic: workOrder.mechanic,
+        target: workOrder.targetDueDate ? format(workOrder.targetDueDate, "yyyy-MM-dd") : "",
+        completed: workOrder.finalCompletedAt ? format(workOrder.finalCompletedAt, "yyyy-MM-dd") : "",
+        faultDescription: workOrder.faultDescription,
+        actionTaken: workOrder.actionTaken,
+        diagnosisResult: workOrder.diagnosisResult,
+        memo: workOrder.memo
+      });
+      styleRiskCell(row.getCell("riskLevel"), riskLevel);
+    }
+  }
+  finishTable(history);
+
+  return workbook;
+}
+
 export async function workbookResponse(workbook: ExcelJS.Workbook, fileName: string) {
   const buffer = await workbook.xlsx.writeBuffer();
   return new Response(buffer, {
@@ -242,6 +344,124 @@ async function getExportWorkOrders(filter: ExportFilter): Promise<ExportWorkOrde
     if (requestDiff) return requestDiff;
     return priorityOrder(a.priority) - priorityOrder(b.priority);
   });
+}
+
+async function getExportEquipmentAssets(): Promise<ExportEquipmentAsset[]> {
+  const rows = appEnv.demoMode ? await demoEquipmentExportRows() : await dbEquipmentExportRows();
+  return rows.sort((a, b) => {
+    const aMetrics = equipmentMetrics(a.workOrders);
+    const bMetrics = equipmentMetrics(b.workOrders);
+    const riskDiff = equipmentRiskOrder(aMetrics.riskLevel) - equipmentRiskOrder(bMetrics.riskLevel);
+    if (riskDiff) return riskDiff;
+    const countDiff = b.workOrders.length - a.workOrders.length;
+    if (countDiff) return countDiff;
+    return a.customer.localeCompare(b.customer, "ko") || a.assetNo.localeCompare(b.assetNo, "ko");
+  });
+}
+
+async function demoEquipmentExportRows(): Promise<ExportEquipmentAsset[]> {
+  const assets = new Map<string, ExportEquipmentAsset>();
+  const masterRows = await readMasterListRows().catch(() => []);
+
+  masterRows.forEach((row, index) => {
+    const assetNo = numberFromEquipmentText(pick(row, ["K&L 등록", "No.", "배치No", "장비 No"])) || `template-${index + 1}`;
+    assets.set(assetNo, {
+      assetNo,
+      equipmentNo: pick(row, ["장비 No"]),
+      placementNo: pick(row, ["배치No"]),
+      customer: pick(row, ["사업장", "계약처"]) || "미지정",
+      site: pick(row, ["배치장소", "사업장"]) || "미지정",
+      modelName: pick(row, ["모델명"]),
+      serialNo: pick(row, ["차대번호"]),
+      tonnage: pick(row, ["톤수"]),
+      status: pick(row, ["상태"]),
+      managerName: pick(row, ["담당자"]),
+      location: pick(row, ["배치장소"]),
+      operationType: pick(row, ["운영"]),
+      operatingHours: pick(row, ["가동시간"]),
+      workOrders: []
+    });
+  });
+
+  for (const row of demoRows()) {
+    const assetNo = numberFromEquipmentText(row.equipment) || row.equipment || row.requestNo;
+    const existing = assets.get(assetNo);
+    if (existing) {
+      existing.workOrders.push(row);
+      continue;
+    }
+    assets.set(assetNo, {
+      assetNo,
+      equipmentNo: "",
+      placementNo: "",
+      customer: row.customer,
+      site: row.site,
+      modelName: row.modelName,
+      serialNo: row.serialNo,
+      tonnage: "",
+      status: "",
+      managerName: "",
+      location: row.site,
+      operationType: "",
+      operatingHours: "",
+      workOrders: [row]
+    });
+  }
+
+  return Array.from(assets.values()).map((asset) => ({
+    ...asset,
+    workOrders: asset.workOrders.sort((a, b) => b.requestDate.getTime() - a.requestDate.getTime())
+  }));
+}
+
+async function dbEquipmentExportRows(): Promise<ExportEquipmentAsset[]> {
+  const rows = await prisma.equipment.findMany({
+    include: {
+      customer: true,
+      site: true,
+      workOrders: {
+        where: { deletedAt: null },
+        include: { customer: true, site: true, equipment: true, assignedMechanic: true },
+        orderBy: { requestDate: "desc" }
+      }
+    },
+    orderBy: [{ customer: { name: "asc" } }, { normalizedNo: "asc" }]
+  });
+
+  return rows.map((row) => ({
+    assetNo: row.normalizedNo ?? row.equipmentNo ?? row.placementNo ?? row.serialNo ?? row.id,
+    equipmentNo: row.equipmentNo ?? "",
+    placementNo: row.placementNo ?? "",
+    customer: row.customer?.name ?? "미지정",
+    site: row.site?.name ?? row.location ?? "미지정",
+    modelName: row.modelName ?? "",
+    serialNo: row.serialNo ?? "",
+    tonnage: row.tonnage ?? "",
+    status: row.status ?? "",
+    managerName: row.managerName ?? "",
+    location: row.location ?? "",
+    operationType: row.operationType ?? "",
+    operatingHours: row.operatingHours ?? "",
+    workOrders: row.workOrders.map((workOrder) => ({
+      requestNo: workOrder.requestNo,
+      requestDate: workOrder.requestDate,
+      customer: workOrder.customer?.name ?? row.customer?.name ?? "",
+      site: workOrder.site?.name ?? row.site?.name ?? "",
+      equipment: workOrder.equipmentInput ?? workOrder.equipmentNoNormalized ?? row.normalizedNo ?? "",
+      modelName: workOrder.equipment?.modelName ?? row.modelName ?? "",
+      serialNo: workOrder.equipment?.serialNo ?? row.serialNo ?? "",
+      faultDescription: workOrder.faultDescription,
+      mechanic: workOrder.assignedMechanic?.name ?? "",
+      targetDueDate: workOrder.targetDueDate,
+      finalCompletedAt: workOrder.finalCompletedAt,
+      priority: workOrder.priorityLevel,
+      status: workOrder.status,
+      actionTaken: workOrder.actionTaken ?? "",
+      diagnosisResult: workOrder.diagnosisResult ?? "",
+      memo: workOrder.memo ?? "",
+      isDelayed: workOrder.isDelayed
+    }))
+  }));
 }
 
 function demoRows(): ExportWorkOrder[] {
@@ -324,6 +544,101 @@ function workOrderColumns(): Partial<ExcelJS.Column>[] {
     { header: "진단결과", key: "diagnosisResult", width: 36 },
     { header: "비고", key: "memo", width: 24 }
   ];
+}
+
+function equipmentSummaryColumns(): Partial<ExcelJS.Column>[] {
+  return [
+    { header: "관리번호", key: "assetNo", width: 14 },
+    { header: "장비 No", key: "equipmentNo", width: 16 },
+    { header: "배치 No", key: "placementNo", width: 16 },
+    { header: "사업장", key: "customer", width: 20 },
+    { header: "배치장소", key: "site", width: 22 },
+    { header: "모델명", key: "modelName", width: 18 },
+    { header: "차대번호", key: "serialNo", width: 24 },
+    { header: "톤수", key: "tonnage", width: 10 },
+    { header: "상태", key: "status", width: 12 },
+    { header: "담당자", key: "managerName", width: 14 },
+    { header: "위치", key: "location", width: 22 },
+    { header: "운영", key: "operationType", width: 12 },
+    { header: "가동시간", key: "operatingHours", width: 12 },
+    { header: "관리 판단", key: "riskLevel", width: 18 },
+    { header: "권장 조치", key: "recommendation", width: 26 },
+    { header: "누적 정비", key: "total", width: 12 },
+    { header: "미결", key: "open", width: 10 },
+    { header: "완료", key: "completed", width: 10 },
+    { header: "긴급", key: "urgent", width: 10 },
+    { header: "지연", key: "delayed", width: 10 },
+    { header: "반복 신호", key: "repeatSignal", width: 12 },
+    { header: "최근 불량", key: "lastFault", width: 42 },
+    { header: "최근 조치", key: "lastAction", width: 42 }
+  ];
+}
+
+function equipmentHistoryColumns(): Partial<ExcelJS.Column>[] {
+  return [
+    { header: "관리번호", key: "assetNo", width: 14 },
+    { header: "관리 판단", key: "riskLevel", width: 18 },
+    { header: "사업장", key: "customer", width: 20 },
+    { header: "배치장소", key: "site", width: 22 },
+    { header: "모델명", key: "modelName", width: 18 },
+    { header: "차대번호", key: "serialNo", width: 24 },
+    { header: "접수번호", key: "requestNo", width: 16 },
+    { header: "접수일", key: "requestDate", width: 14 },
+    { header: "Priority", key: "priority", width: 12 },
+    { header: "상태", key: "status", width: 16 },
+    { header: "정비사", key: "mechanic", width: 14 },
+    { header: "Target", key: "target", width: 14 },
+    { header: "완료일", key: "completed", width: 14 },
+    { header: "불량내용", key: "faultDescription", width: 44 },
+    { header: "조치내용", key: "actionTaken", width: 44 },
+    { header: "진단결과", key: "diagnosisResult", width: 36 },
+    { header: "비고", key: "memo", width: 24 }
+  ];
+}
+
+function equipmentMetrics(workOrders: ExportWorkOrder[]) {
+  const openCount = workOrders.filter((row) => !isClosedStatus(row.status)).length;
+  const completedCount = workOrders.filter((row) => isClosedStatus(row.status)).length;
+  const urgentCount = workOrders.filter((row) => row.priority === "P1").length;
+  const delayedCount = workOrders.filter((row) => row.isDelayed || row.status === WorkOrderStatus.DELAYED).length;
+  const repeatSignalCount = workOrders.filter((row) => /재발|반복|재방문|다시|또\s*/.test(row.faultDescription)).length;
+  const riskLevel =
+    workOrders.length >= 3 || repeatSignalCount >= 2 || (urgentCount > 0 && delayedCount > 0)
+      ? "CRITICAL"
+      : workOrders.length >= 2 || repeatSignalCount > 0 || urgentCount > 0 || delayedCount > 0 || openCount > 0
+        ? "WATCH"
+        : "NORMAL";
+  return { openCount, completedCount, urgentCount, delayedCount, repeatSignalCount, riskLevel };
+}
+
+function isClosedStatus(status: string) {
+  return ["FINAL_COMPLETED", "ARCHIVED", "CANCELLED"].includes(status);
+}
+
+function equipmentRiskLabel(riskLevel: string) {
+  if (riskLevel === "CRITICAL") return "교체/폐각 검토";
+  if (riskLevel === "WATCH") return "정밀점검 대상";
+  return "일반 관리";
+}
+
+function equipmentRecommendation(riskLevel: string) {
+  if (riskLevel === "CRITICAL") return "교체/폐각 또는 대수선 검토";
+  if (riskLevel === "WATCH") return "정밀점검 및 예방정비 강화";
+  return "일반 관리";
+}
+
+function equipmentRiskOrder(riskLevel: string) {
+  return { CRITICAL: 0, WATCH: 1, NORMAL: 2 }[riskLevel as "CRITICAL"] ?? 9;
+}
+
+function styleRiskCell(cell: ExcelJS.Cell, riskLevel: string) {
+  const colors = {
+    CRITICAL: "FFD93535",
+    WATCH: "FFD49D12",
+    NORMAL: "FF2F8B57"
+  };
+  cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: colors[riskLevel as "CRITICAL"] ?? colors.NORMAL } };
+  cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
 }
 
 function noteworthyRows(rows: ExportWorkOrder[]) {
