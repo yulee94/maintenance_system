@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
+  AlertTriangle,
   BarChart3,
   Bot,
   CalendarDays,
@@ -251,6 +252,15 @@ type TabId = (typeof tabs)[number]["id"];
 type MobilePreviewMode = "mechanic" | "admin" | "executive";
 type MobilePreviewScreen = "today" | "workorders" | "completed" | "ai";
 type MobileMetricFilter = "open" | "completed" | "work" | "urgent" | null;
+type MobileAiAlert = {
+  id: string;
+  level: "critical" | "warning" | "info";
+  title: string;
+  message: string;
+  equipment: string;
+  count: number;
+  primaryWorkOrderId: string;
+};
 type MobileAiResult = {
   source: "openai" | "demo" | "local";
   answer: string;
@@ -448,6 +458,7 @@ function MobileAppPreview({
   const reportWaiting = useMemo(() => workOrders.filter((row) => row.status === "REPORT_SUBMITTED"), [workOrders]);
   const completedRows = useMemo(() => workOrders.filter(isClosed), [workOrders]);
   const todayRows = useMemo(() => workOrders.filter((row) => isDailyStatusTarget(row, toDateKey(new Date()))), [workOrders]);
+  const aiAlerts = useMemo(() => buildMobileAiAlerts(workOrders), [workOrders]);
   const mechanicRows = useMemo(() => {
     const assignedToMe = openRows.filter((row) => row.assignedMechanic?.id === user.id);
     const assignedForPreview = openRows.filter((row) => row.assignedMechanic?.id);
@@ -570,12 +581,14 @@ function MobileAppPreview({
           <div className="mobile-content">
             {screen === "ai" ? (
               <MobileAiPanel
+                alerts={aiAlerts}
                 question={aiQuestion}
                 result={aiResult}
                 loading={aiLoading}
                 error={aiError}
                 onQuestion={setAiQuestion}
                 onAsk={askAi}
+                onOpenWorkOrder={onOpenWorkOrder}
               />
             ) : (
               <div className="mobile-work-list">
@@ -609,19 +622,23 @@ function MobileAppPreview({
 }
 
 function MobileAiPanel({
+  alerts,
   question,
   result,
   loading,
   error,
   onQuestion,
-  onAsk
+  onAsk,
+  onOpenWorkOrder
 }: {
+  alerts: MobileAiAlert[];
   question: string;
   result: MobileAiResult | null;
   loading: boolean;
   error: string;
   onQuestion: (value: string) => void;
   onAsk: (event?: React.FormEvent) => void;
+  onOpenWorkOrder: (id: string) => void;
 }) {
   const examples = [
     "시동은 걸리는데 출력이 떨어질 때 과거 조치 추천",
@@ -631,6 +648,32 @@ function MobileAiPanel({
 
   return (
     <div className="mobile-ai-panel">
+      <section className="mobile-ai-alerts" aria-label="AI 자동 경고">
+        <div className="mobile-ai-alert-head">
+          <span><AlertTriangle size={13} />AI 자동 경고</span>
+          <strong>{alerts.length ? `${alerts.length}건` : "정상"}</strong>
+        </div>
+        {alerts.length ? (
+          alerts.slice(0, 4).map((alert) => (
+            <button
+              className={`mobile-ai-alert ${alert.level}`}
+              key={alert.id}
+              type="button"
+              onClick={() => onOpenWorkOrder(alert.primaryWorkOrderId)}
+            >
+              <span>{alert.level === "critical" ? "점검 필요" : alert.level === "warning" ? "주의 필요" : "관찰"}</span>
+              <strong>{alert.title}</strong>
+              <p>{alert.message}</p>
+            </button>
+          ))
+        ) : (
+          <div className="mobile-ai-alert empty">
+            <span>관찰</span>
+            <strong>반복 고장 경고 없음</strong>
+            <p>현재 데이터에서는 동일 장비 반복 고장이나 재발 신호가 뚜렷하지 않습니다.</p>
+          </div>
+        )}
+      </section>
       <form className="mobile-ai-form" onSubmit={onAsk}>
         <label htmlFor="mobile-ai-question">정비/업무 문의</label>
         <textarea
@@ -2285,6 +2328,83 @@ function approvalStatusLabel(status: ApprovalStep["status"]) {
     APPROVED: "승인 완료",
     REJECTED: "반려"
   }[status];
+}
+
+function buildMobileAiAlerts(rows: WorkOrder[]): MobileAiAlert[] {
+  const alerts = new Map<string, MobileAiAlert>();
+  const equipmentGroups = new Map<string, WorkOrder[]>();
+
+  for (const row of rows) {
+    const key = equipmentKey(row);
+    if (!key) continue;
+    const group = equipmentGroups.get(key) ?? [];
+    group.push(row);
+    equipmentGroups.set(key, group);
+  }
+
+  for (const group of equipmentGroups.values()) {
+    const sortedGroup = sortWorkOrders(group, "requestDate");
+    const latest = sortedGroup[0];
+    if (!latest) continue;
+    if (sortedGroup.length >= 2) {
+      const level = sortedGroup.length >= 3 || sortedGroup.some((row) => row.priorityLevel === "P1" || row.isDelayed || row.status === "DELAYED") ? "critical" : "warning";
+      const equipment = equipmentLabel(latest);
+      alerts.set(`repeat-${equipmentKey(latest)}`, {
+        id: `repeat-${equipmentKey(latest)}`,
+        level,
+        title: `${equipment} 반복 고장 ${sortedGroup.length}건`,
+        message: "동일 장비에서 고장 접수가 반복됩니다. 주요 부품, 사용 조건, 이전 임시조치 부위를 함께 점검하세요.",
+        equipment,
+        count: sortedGroup.length,
+        primaryWorkOrderId: latest.id
+      });
+    }
+  }
+
+  for (const row of rows) {
+    const text = `${row.faultDescription} ${row.memo ?? ""} ${row.diagnosisResult ?? ""} ${row.actionTaken ?? ""}`;
+    const hasRecurSignal = /재발|반복|재방문|다시|또\s*/.test(text);
+    const hasRiskSignal = !isClosed(row) && (row.priorityLevel === "P1" || row.isDelayed || row.status === "DELAYED");
+    if (!hasRecurSignal && !hasRiskSignal) continue;
+
+    const equipment = equipmentLabel(row);
+    const id = `risk-${row.id}`;
+    alerts.set(id, {
+      id,
+      level: hasRiskSignal ? "critical" : "warning",
+      title: hasRecurSignal ? `${equipment} 재발 신호 감지` : `${equipment} 긴급 점검 필요`,
+      message: hasRecurSignal
+        ? "고장 내용에 재발 또는 재방문 신호가 있습니다. 같은 증상이 다시 생기지 않도록 원인 부품과 운행 조건을 유념하세요."
+        : "긴급 또는 지연 상태입니다. 장비 사용 전 안전 점검과 담당자 확인이 필요합니다.",
+      equipment,
+      count: 1,
+      primaryWorkOrderId: row.id
+    });
+  }
+
+  return Array.from(alerts.values())
+    .sort((a, b) => aiAlertRank(a.level) - aiAlertRank(b.level) || b.count - a.count || a.equipment.localeCompare(b.equipment, "ko"))
+    .slice(0, 6);
+}
+
+function aiAlertRank(level: MobileAiAlert["level"]) {
+  return { critical: 0, warning: 1, info: 2 }[level];
+}
+
+function equipmentKey(row: WorkOrder) {
+  const raw =
+    row.equipment?.serialNo ??
+    row.equipment?.equipmentNo ??
+    row.equipment?.placementNo ??
+    row.equipment?.vehicleRegistrationNo ??
+    row.equipmentNoNormalized ??
+    row.equipmentInput ??
+    "";
+  return raw.toLowerCase().replace(/[^\p{Letter}\p{Number}]/gu, "");
+}
+
+function equipmentLabel(row: WorkOrder) {
+  return row.equipmentInput ?? row.equipmentNoNormalized ?? row.equipment?.equipmentNo ?? row.equipment?.serialNo ?? "장비 미지정";
 }
 
 function initialMobilePreviewMode(user: AuthUser): MobilePreviewMode {
