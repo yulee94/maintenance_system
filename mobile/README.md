@@ -41,6 +41,7 @@ EXPO_PUBLIC_API_BASE_URL=http://192.168.0.10:3000
 - `POST /api/v1/login`
 - `POST /api/v1/logout`
 - `GET /api/v1/me`
+- `POST /api/v1/devices/register`
 - `GET /api/v1/branches`
 - `GET /api/v1/tasks`
 - `POST /api/v1/tasks/:id/start`
@@ -57,6 +58,28 @@ Authorization: Bearer {session-token}
 ```
 
 웹 쿠키 세션은 유지하되, 모바일 클라이언트는 로그인 응답의 `sessionToken`을 `expo-secure-store`에 저장하고 Bearer 토큰으로 인증한다.
+
+## 로그인 보안 흐름
+
+```text
+회사 계정 로그인
+  -> OTP 또는 MFA
+  -> 기기 등록
+  -> 사업장/권한 확인
+  -> 앱 사용
+```
+
+현재 앱은 `expo-secure-store`를 사용하며 iOS에서는 Keychain, Android에서는 Keystore 기반 보안 저장소를 사용한다. 세션 토큰과 기기 식별자는 `WHEN_UNLOCKED_THIS_DEVICE_ONLY` 옵션으로 저장해 다른 기기로 복원되지 않게 한다.
+
+앱 내부에 저장하면 안 되는 항목:
+
+- 비밀번호 원문
+- 주민등록번호
+- 카드번호
+- 민감정보 평문
+- 관리자 토큰 장기 저장
+
+꼭 필요한 토큰, 기기 식별자, 앱 잠금 설정값은 Secure Storage에만 저장한다.
 
 ## 빌드
 

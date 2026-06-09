@@ -10,6 +10,39 @@ export type LoginResponse = AuthUser & {
   sessionToken?: string;
   expiresInHours?: number;
   apiVersion?: string;
+  mfaRequired?: boolean;
+  mfaChallengeId?: string;
+  nextStep?: "MFA" | "DEVICE_REGISTRATION" | "APP_ACCESS";
+  methods?: string[];
+  authFlow?: MobileAuthFlow;
+};
+
+export type MobileAuthFlow = {
+  steps: {
+    id: string;
+    label: string;
+    status: "completed" | "required" | "skipped" | "blocked" | "allowed";
+    required?: boolean;
+    methods?: string[];
+    branchCount?: number;
+    roles?: string[];
+  }[];
+  accessScope: {
+    branchCount: number;
+    roles: string[];
+    scope: string;
+  };
+  device: {
+    required: boolean;
+    registered: boolean;
+    deviceIdHash?: string | null;
+  };
+  storagePolicy: {
+    secureStorageRequired: boolean;
+    secureStorageTargets: string[];
+    neverStore: string[];
+    secureStoreOnly: string[];
+  };
 };
 
 export type Summary = {

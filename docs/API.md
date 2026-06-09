@@ -18,6 +18,7 @@
 - `POST /api/v1/login`: 모바일 로그인, `sessionToken` 발급
 - `POST /api/v1/logout`: 모바일 로그아웃
 - `GET /api/v1/me`: 현재 모바일 사용자 조회
+- `POST /api/v1/devices/register`: 로그인 후 모바일 기기 등록
 - `GET /api/v1/branches`: 접근 가능한 사업장 목록 조회
 - `GET /api/v1/tasks`: 접근 가능한 정비건 목록 및 요약 조회
 - `POST /api/v1/tasks/:id/start`: 모바일 작업 시작
@@ -33,6 +34,18 @@ Authorization: Bearer {session-token}
 ```
 
 정비사는 본인에게 배정된 정비건만 조회/처리한다. 관리자, 임원, 최고관리자는 현재 접근 가능한 운영 데이터 범위 안에서 전체 업무를 조회할 수 있다.
+
+모바일 로그인 플로우:
+
+```text
+회사 계정 로그인
+  -> OTP 또는 MFA
+  -> 기기 등록
+  -> 사업장/권한 확인
+  -> 앱 사용
+```
+
+`MOBILE_MFA_REQUIRED=true` 환경에서는 `/api/v1/login`이 OTP/MFA 확인 전 `sessionToken`을 발급하지 않는다. 개발/데모용 OTP는 `MOBILE_TEST_OTP_CODE`로만 사용하고, 운영 전에는 TOTP/WebAuthn/SSO MFA provider로 교체한다.
 
 ## Mobile App API v2
 

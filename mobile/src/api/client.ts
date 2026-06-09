@@ -10,24 +10,32 @@ type ApiEnvelope<T> = {
 const TOKEN_KEY = "maintenance.mobile.sessionToken";
 const DEVICE_ID_KEY = "maintenance.mobile.deviceId";
 const API_BASE_URL = (process.env.EXPO_PUBLIC_API_BASE_URL ?? "http://localhost:3000").replace(/\/$/, "");
+const secureStoreOptions: SecureStore.SecureStoreOptions = {
+  keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY
+};
 
-export async function login(loginId: string, password: string) {
+export async function login(loginId: string, password: string, otpCode?: string) {
   const data = await apiRequest<LoginResponse>("/api/v1/login", {
     method: "POST",
-    body: JSON.stringify({ loginId, password })
+    body: JSON.stringify({ loginId, password, otpCode })
   });
 
-  if (!data.sessionToken) {
-    throw new Error("모바일 로그인 토큰을 받지 못했습니다. 서버가 최신 버전인지 확인하세요.");
+  if (data.mfaRequired && !data.sessionToken) {
+    throw new Error("OTP 또는 MFA 인증이 필요합니다. 모바일 MFA 화면을 연결한 뒤 인증번호를 입력해야 합니다.");
   }
 
-  await SecureStore.setItemAsync(TOKEN_KEY, data.sessionToken);
+  if (!data.sessionToken) {
+    throw new Error("모바일 로그인 토큰을 받지 못했습니다. 서버 버전을 확인하세요.");
+  }
+
+  await setSecureItem(TOKEN_KEY, data.sessionToken);
+  await registerDevice();
   return toAuthUser(data);
 }
 
 export async function logout() {
   await apiRequest<{ loggedOut: boolean }>("/api/v1/logout", { method: "POST" }).catch(() => undefined);
-  await SecureStore.deleteItemAsync(TOKEN_KEY);
+  await deleteSecureItem(TOKEN_KEY);
 }
 
 export async function getMe() {
@@ -39,7 +47,7 @@ export async function getTaskBundle() {
   return apiRequest<TaskBundle>("/api/v1/tasks");
 }
 
-export async function getDashboardSummary() {
+export async function getDashboardSummary(): Promise<Summary> {
   return (await getTaskBundle()).summary;
 }
 
@@ -50,6 +58,13 @@ export async function getWorkOrders() {
 export async function getBranches() {
   const data = await apiRequest<{ branches: Branch[] }>("/api/v1/branches");
   return data.branches;
+}
+
+export async function registerDevice() {
+  return apiRequest<{ device: { registered: boolean; deviceIdHash?: string | null; registeredAt: string } }>(
+    "/api/v1/devices/register",
+    { method: "POST" }
+  );
 }
 
 export function startWorkOrder(id: string) {
@@ -71,7 +86,7 @@ export function askAi(question: string) {
 }
 
 export async function apiRequest<T>(path: string, init: RequestInit = {}) {
-  const token = await SecureStore.getItemAsync(TOKEN_KEY);
+  const token = await getSecureItem(TOKEN_KEY);
   const deviceId = await getDeviceId();
   const isForm = init.body instanceof FormData;
   const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -111,9 +126,21 @@ function toAuthUser(input: LoginResponse): AuthUser {
 }
 
 async function getDeviceId() {
-  const saved = await SecureStore.getItemAsync(DEVICE_ID_KEY);
+  const saved = await getSecureItem(DEVICE_ID_KEY);
   if (saved) return saved;
   const id = `rn-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-  await SecureStore.setItemAsync(DEVICE_ID_KEY, id);
+  await setSecureItem(DEVICE_ID_KEY, id);
   return id;
+}
+
+function getSecureItem(key: string) {
+  return SecureStore.getItemAsync(key, secureStoreOptions);
+}
+
+function setSecureItem(key: string, value: string) {
+  return SecureStore.setItemAsync(key, value, secureStoreOptions);
+}
+
+function deleteSecureItem(key: string) {
+  return SecureStore.deleteItemAsync(key, secureStoreOptions);
 }

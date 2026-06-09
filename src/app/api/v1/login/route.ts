@@ -8,21 +8,62 @@ import { SESSION_COOKIE, sessionCookieOptions, signSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { demoLogin } from "@/lib/demo";
 import { appEnv } from "@/lib/env";
+import { buildMfaChallenge, buildMobileAuthFlow } from "@/lib/mobile-auth-policy";
+import { mobileBranchesForUser } from "@/lib/mobile-api";
 
 const schema = z.object({
   loginId: z.string().min(1),
-  password: z.string().min(1)
+  password: z.string().min(1),
+  otpCode: z.string().optional()
 });
 
 export async function POST(request: NextRequest) {
   try {
     const input = await readJson(request, schema);
+    const deviceId = request.headers.get("x-device-id");
+    if (appEnv.mobileDeviceRegistrationRequired && !deviceId) {
+      throw new ApiError(400, "모바일 기기 식별자가 필요합니다.");
+    }
 
     if (appEnv.demoMode) {
       const demoUser = await demoLogin(input.loginId, input.password);
       if (!demoUser) throw new ApiError(401, "아이디 또는 비밀번호를 확인하세요.");
+      const branchCount = (await mobileBranchesForUser(demoUser)).length;
+
+      if (appEnv.mobileMfaRequired && !input.otpCode) {
+        return ok({
+          apiVersion: "v1",
+          ...buildMfaChallenge(input.loginId),
+          authFlow: buildMobileAuthFlow({
+            user: demoUser,
+            mfaRequired: true,
+            mfaVerified: false,
+            deviceId,
+            deviceRegistrationRequired: appEnv.mobileDeviceRegistrationRequired,
+            branchCount
+          })
+        });
+      }
+
+      if (appEnv.mobileMfaRequired && input.otpCode !== appEnv.mobileTestOtpCode) {
+        throw new ApiError(401, "OTP 또는 MFA 인증번호를 확인하세요.");
+      }
+
       const token = await signSession(demoUser);
-      const response = ok({ ...demoUser, sessionToken: token, expiresInHours: 8, apiVersion: "v1" });
+      const response = ok({
+        ...demoUser,
+        sessionToken: token,
+        expiresInHours: 8,
+        apiVersion: "v1",
+        authFlow: buildMobileAuthFlow({
+          user: demoUser,
+          mfaRequired: appEnv.mobileMfaRequired,
+          mfaVerified: true,
+          deviceId,
+          deviceRegistrationRequired: appEnv.mobileDeviceRegistrationRequired,
+          branchCount
+        })
+      });
       response.cookies.set(SESSION_COOKIE, token, sessionCookieOptions);
       return response;
     }
@@ -60,11 +101,6 @@ export async function POST(request: NextRequest) {
       throw new ApiError(401, "아이디 또는 비밀번호를 확인하세요.");
     }
 
-    await prisma.user.update({
-      where: { id: user.id },
-      data: { loginFailCount: 0, lockedUntil: null, lastLoginAt: new Date() }
-    });
-
     const authUser = {
       id: user.id,
       loginId: user.loginId,
@@ -72,8 +108,61 @@ export async function POST(request: NextRequest) {
       roles: user.roles.map((item) => item.role.code as RoleCode),
       mustChangePassword: user.mustChangePassword
     };
+    const branchCount = (await mobileBranchesForUser(authUser)).length;
+
+    if (appEnv.mobileMfaRequired && !input.otpCode) {
+      await auditLog({
+        user: authUser,
+        request,
+        action: "mobile.auth.mfa_required",
+        targetType: "user",
+        targetId: user.id
+      });
+      return ok({
+        apiVersion: "v1",
+        ...buildMfaChallenge(input.loginId),
+        authFlow: buildMobileAuthFlow({
+          user: authUser,
+          mfaRequired: true,
+          mfaVerified: false,
+          deviceId,
+          deviceRegistrationRequired: appEnv.mobileDeviceRegistrationRequired,
+          branchCount
+        })
+      });
+    }
+
+    if (appEnv.mobileMfaRequired && input.otpCode !== appEnv.mobileTestOtpCode) {
+      await auditLog({
+        user: authUser,
+        request,
+        action: "mobile.auth.mfa_failed",
+        targetType: "user",
+        targetId: user.id
+      });
+      throw new ApiError(401, "OTP 또는 MFA 인증번호를 확인하세요.");
+    }
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { loginFailCount: 0, lockedUntil: null, lastLoginAt: new Date() }
+    });
+
     const token = await signSession(authUser);
-    const response = ok({ ...authUser, sessionToken: token, expiresInHours: 8, apiVersion: "v1" });
+    const response = ok({
+      ...authUser,
+      sessionToken: token,
+      expiresInHours: 8,
+      apiVersion: "v1",
+      authFlow: buildMobileAuthFlow({
+        user: authUser,
+        mfaRequired: appEnv.mobileMfaRequired,
+        mfaVerified: true,
+        deviceId,
+        deviceRegistrationRequired: appEnv.mobileDeviceRegistrationRequired,
+        branchCount
+      })
+    });
     response.cookies.set(SESSION_COOKIE, token, sessionCookieOptions);
     await auditLog({ user: authUser, request, action: "mobile.auth.login", targetType: "user", targetId: user.id });
     return response;

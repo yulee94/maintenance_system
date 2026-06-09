@@ -6,5 +6,8 @@ export const appEnv = {
   excelTemplateRoot: process.env.EXCEL_TEMPLATE_ROOT ?? "./docs/templates",
   appBaseUrl: process.env.APP_BASE_URL ?? "http://localhost:3000",
   openAiApiKey: process.env.OPENAI_API_KEY,
-  openAiModel: process.env.OPENAI_MODEL ?? "gpt-4.1-mini"
+  openAiModel: process.env.OPENAI_MODEL ?? "gpt-4.1-mini",
+  mobileMfaRequired: process.env.MOBILE_MFA_REQUIRED === "true",
+  mobileTestOtpCode: process.env.MOBILE_TEST_OTP_CODE ?? "000000",
+  mobileDeviceRegistrationRequired: process.env.MOBILE_DEVICE_REGISTRATION_REQUIRED !== "false"
 };
