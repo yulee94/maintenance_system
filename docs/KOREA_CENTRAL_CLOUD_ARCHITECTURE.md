@@ -92,6 +92,42 @@ Object Storage 경로 예시:
 - 로그는 API 요청, 권한 거부, 승인/반려, 파일 다운로드, AI 조회를 추적할 수 있어야 합니다.
 - 장애 알림은 API 오류율, DB 연결 실패, 배치 실패, 저장소 업로드 실패를 기준으로 설정합니다.
 
+## 배포 환경
+
+운영 서버는 `dev`, `staging`, `prod` 3단계로 분리합니다. 세 환경은 같은 한국 리전 중앙 클라우드 안에 둘 수 있지만, DB, Redis, Object Storage, 환경 변수, 시크릿, 도메인은 서로 섞이지 않게 분리합니다.
+
+| 환경 | 목적 | 데이터 기준 | 배포 기준 |
+| --- | --- | --- | --- |
+| `dev` | 개발자 기능 개발과 실험 | 샘플 데이터 또는 초기화 가능한 개발 데이터만 사용 | 기능 브랜치 또는 개발 브랜치에서 자동/수동 배포 |
+| `staging` | 테스트, 검수, 사용자 승인 테스트 | 운영과 유사한 익명화 데이터 또는 검수용 데이터 사용 | 운영 배포 전 최종 검증, 마이그레이션 리허설 |
+| `prod` | 실제 운영 | 실제 고객, 장비, 정비, 승인, 파일 데이터 사용 | 승인된 릴리스만 수동 승인 후 배포 |
+
+환경별 분리 원칙:
+
+- `dev`에서 생성한 데이터는 `staging` 또는 `prod`로 승격하지 않습니다.
+- `prod` 데이터는 원본 그대로 `dev`로 복사하지 않습니다. 필요한 경우 익명화 후 `staging` 검수용으로만 사용합니다.
+- `DATABASE_URL`, `REDIS_URL`, `JWT_SECRET`, Object Storage bucket, OpenAI/API key는 환경별로 별도 발급합니다.
+- 파일 저장소는 환경별 bucket을 분리하는 방식을 우선합니다. prefix만으로 분리하는 방식은 실수 위험이 있으므로 보조 수단으로만 사용합니다.
+- 배포 파이프라인은 `dev -> staging -> prod` 순서를 따릅니다.
+- DB 마이그레이션은 `dev`에서 1차 검증, `staging`에서 운영 유사 데이터 리허설, `prod`에서 백업 확인 후 적용합니다.
+- `prod`에서는 디버그 로그, 테스트 계정의 과도한 권한, 임시 seed 데이터를 사용하지 않습니다.
+
+권장 도메인 예시:
+
+```text
+dev-maintenance.example.co.kr
+staging-maintenance.example.co.kr
+maintenance.example.co.kr
+```
+
+권장 Object Storage 분리 예시:
+
+```text
+maintenance-dev
+maintenance-staging
+maintenance-prod
+```
+
 ## 현재 적용 범위
 
 현재 변경은 아키텍처 기준 문서 추가입니다. 실제 DB 스키마, API 라우트, 인증 로직은 변경하지 않습니다. 다음 구현 단계에서 `Branch`, `UserBranch`, `branchId` 컬럼, 서버 측 권한 필터, 사업장별 테스트를 별도 작업으로 추가합니다.
