@@ -764,7 +764,7 @@ a {
 
 .mobile-bottom-nav {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 4px;
   padding: 8px;
   border-top: 1px solid var(--line);
@@ -994,7 +994,7 @@ a {
 
 .app-tab-strip {
   display: grid;
-  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  grid-template-columns: repeat(5, minmax(110px, 1fr));
   gap: 8px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -1088,6 +1088,186 @@ a {
   top: 78px;
   display: grid;
   gap: 12px;
+}
+
+.planning-panel {
+  gap: 14px;
+}
+
+.planning-layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.85fr) minmax(0, 1.15fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.planning-layout.compact {
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.planning-column {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.planning-alert-box,
+.planning-create,
+.planning-list,
+.planning-detail {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 14px;
+}
+
+.planning-layout.compact .planning-alert-box,
+.planning-layout.compact .planning-create,
+.planning-layout.compact .planning-list,
+.planning-layout.compact .planning-detail {
+  padding: 10px;
+}
+
+.planning-alert-list,
+.plan-select-list,
+.plan-item-list,
+.planning-list {
+  display: grid;
+  gap: 8px;
+}
+
+.planning-alert,
+.plan-card {
+  display: grid;
+  justify-items: start;
+  gap: 5px;
+  min-height: 74px;
+  border-left-width: 5px;
+  border-radius: 8px;
+  background: #fff;
+  padding: 10px;
+  text-align: left;
+}
+
+.planning-alert.warning,
+.plan-card.requested {
+  border-left-color: var(--amber);
+  background: rgba(212, 157, 18, 0.07);
+}
+
+.planning-alert.success,
+.plan-card.approved,
+.plan-card.final-confirmed {
+  border-left-color: var(--green);
+  background: rgba(31, 111, 95, 0.06);
+}
+
+.planning-alert.danger,
+.plan-card.rejected {
+  border-left-color: var(--red);
+  background: rgba(217, 53, 53, 0.06);
+}
+
+.plan-card.selected {
+  box-shadow: 0 0 0 2px rgba(31, 111, 95, 0.16);
+}
+
+.planning-alert span,
+.plan-card p,
+.plan-select-row small,
+.plan-item-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.planning-alert strong,
+.plan-card strong,
+.plan-select-row strong,
+.plan-item-card strong {
+  overflow-wrap: anywhere;
+}
+
+.plan-card {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.plan-card div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.plan-select-row {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 9px;
+  align-items: start;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 10px;
+}
+
+.plan-select-row.active {
+  border-color: var(--green);
+  background: rgba(31, 111, 95, 0.06);
+}
+
+.plan-select-row input {
+  width: 18px;
+  min-height: 18px;
+  margin-top: 2px;
+}
+
+.plan-select-row span {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.plan-item-card {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-left-width: 5px;
+  border-radius: 8px;
+  background: #fff;
+  padding: 12px;
+}
+
+.plan-item-card.p1 {
+  border-left-color: var(--red);
+}
+
+.plan-item-card.p2 {
+  border-left-color: var(--amber);
+}
+
+.plan-item-card.p3 {
+  border-left-color: var(--green);
+}
+
+.plan-item-card.outsource {
+  border-left-color: var(--blue);
+}
+
+.plan-item-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.plan-item-head > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
 }
 
 .desktop-ai-grid {
@@ -2577,6 +2757,7 @@ th {
 
   .unified-work-layout,
   .desktop-ai-grid,
+  .planning-layout,
   .equipment-layout,
   .equipment-toolbar {
     grid-template-columns: 1fr;
@@ -2632,6 +2813,10 @@ th {
 
 @media (max-width: 1320px) {
   .unified-work-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .planning-layout {
     grid-template-columns: 1fr;
   }
 

@@ -92,6 +92,7 @@ enum DailyPlanStatus {
   REQUESTED
   APPROVED
   REJECTED
+  FINAL_CONFIRMED
 }
 
 enum OutsourceStatus {

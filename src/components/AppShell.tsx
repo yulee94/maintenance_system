@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState } from 
 import {
   AlertTriangle,
   BarChart3,
+  Bell,
   Bot,
   CalendarDays,
   CheckCircle2,
@@ -14,6 +15,7 @@ import {
   Gauge,
   KeyRound,
   Languages,
+  Lock,
   LogOut,
   Monitor,
   Plus,
@@ -25,7 +27,8 @@ import {
   Upload,
   UserCog,
   Users,
-  Wrench
+  Wrench,
+  XCircle
 } from "lucide-react";
 import { api, patchJson, postJson } from "@/lib/client-api";
 import {
@@ -117,6 +120,36 @@ type ReportSubmitResponse = {
     id: string;
   };
   workOrder: WorkOrder;
+};
+
+type DailyPlanStatus = "DRAFT" | "REQUESTED" | "APPROVED" | "REJECTED" | "FINAL_CONFIRMED";
+
+type DailyWorkPlanItem = {
+  id: string;
+  planId: string;
+  workOrderId: string;
+  mechanicId?: string | null;
+  orderIndex: number;
+  adminMemo?: string | null;
+  mechanicMemo?: string | null;
+  createdAt: string;
+  workOrder: WorkOrder;
+  mechanic?: { id: string; name: string; title?: string | null } | null;
+};
+
+type DailyWorkPlan = {
+  id: string;
+  planDate: string;
+  status: DailyPlanStatus;
+  requestedById?: string | null;
+  reviewedById?: string | null;
+  reviewedAt?: string | null;
+  reviewMemo?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  requestedBy?: { id: string; name: string; title?: string | null } | null;
+  reviewedBy?: { id: string; name: string; title?: string | null } | null;
+  items: DailyWorkPlanItem[];
 };
 
 type EquipmentAsset = {
@@ -314,6 +347,7 @@ const demoAccounts = [
 ];
 
 const tabs = [
+  { id: "planning", labelKey: "nav.planning", label: "계획업무", icon: CalendarDays, allow: (user: AuthUser) => hasAnyRole(user, ["SUPER_ADMIN", "ADMIN", "MECHANIC", "EXECUTIVE"]) },
   { id: "dashboard", labelKey: "nav.dashboard", label: "현황", icon: Gauge, allow: () => true },
   { id: "appwork", labelKey: "nav.appwork", label: "통합업무", icon: Smartphone, allow: () => true },
   { id: "daily", labelKey: "nav.daily", label: "일일현황", icon: ClipboardCheck, allow: (user: AuthUser) => hasAnyRole(user, ["SUPER_ADMIN", "ADMIN"]) },
@@ -330,7 +364,7 @@ const tabs = [
 
 type TabId = (typeof tabs)[number]["id"];
 type MobilePreviewMode = "mechanic" | "admin" | "executive";
-type MobilePreviewScreen = "today" | "workorders" | "completed" | "ai";
+type MobilePreviewScreen = "today" | "workorders" | "completed" | "plans" | "ai";
 type MobileMetricFilter = "open" | "completed" | "work" | "urgent" | null;
 type MobileAiAlert = {
   id: string;
@@ -402,6 +436,7 @@ export function AppShell() {
   const [tab, setTab] = useState<TabId>("dashboard");
   const [summary, setSummary] = useState<Summary | null>(null);
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
+  const [dailyPlans, setDailyPlans] = useState<DailyWorkPlan[]>([]);
   const [users, setUsers] = useState<UserRow[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
@@ -432,12 +467,14 @@ export function AppShell() {
     if (!user) return;
     setLoading(true);
     try {
-      const [summaryData, workOrderData] = await Promise.all([
+      const [summaryData, workOrderData, dailyPlanData] = await Promise.all([
         api<Summary>("/api/dashboard/summary"),
-        api<WorkOrder[]>("/api/work-orders")
+        api<WorkOrder[]>("/api/work-orders"),
+        api<DailyWorkPlan[]>("/api/daily-plans")
       ]);
       setSummary(summaryData);
       setWorkOrders(workOrderData);
+      setDailyPlans(dailyPlanData);
       setSelectedId((current) => current ?? workOrderData[0]?.id ?? null);
       if (hasAnyRole(user, ["SUPER_ADMIN", "ADMIN"])) {
         setUsers(await api<UserRow[]>("/api/admin/users"));
@@ -541,6 +578,22 @@ export function AppShell() {
             <UnifiedWorkAppPanel
               user={user}
               workOrders={workOrders}
+              dailyPlans={dailyPlans}
+              users={users}
+              onChanged={refresh}
+              onOpenWorkOrder={(id) => {
+                setSelectedId(id);
+                setTab(canAdmin || hasAnyRole(user, ["EXECUTIVE", "RECEPTIONIST"]) ? "workorders" : "mechanic");
+              }}
+            />
+          ) : null}
+          {tab === "planning" ? (
+            <PlanningPanel
+              currentUser={user}
+              workOrders={workOrders}
+              dailyPlans={dailyPlans}
+              users={users}
+              onChanged={refresh}
               onOpenWorkOrder={(id) => {
                 setSelectedId(id);
                 setTab(canAdmin || hasAnyRole(user, ["EXECUTIVE", "RECEPTIONIST"]) ? "workorders" : "mechanic");
@@ -574,6 +627,9 @@ export function AppShell() {
         <MobileAppPreview
           user={user}
           workOrders={workOrders}
+          dailyPlans={dailyPlans}
+          users={users}
+          onChanged={refresh}
           onOpenWorkOrder={(id) => {
             setSelectedId(id);
             setTab(canAdmin || hasAnyRole(user, ["EXECUTIVE", "RECEPTIONIST"]) ? "workorders" : "mechanic");
@@ -588,10 +644,16 @@ export function AppShell() {
 function MobileAppPreview({
   user,
   workOrders,
+  dailyPlans,
+  users,
+  onChanged,
   onOpenWorkOrder
 }: {
   user: AuthUser;
   workOrders: WorkOrder[];
+  dailyPlans: DailyWorkPlan[];
+  users: UserRow[];
+  onChanged: () => Promise<void>;
   onOpenWorkOrder: (id: string) => void;
 }) {
   const availableModes = useMemo(() => {
@@ -623,6 +685,7 @@ function MobileAppPreview({
   const completedRows = useMemo(() => workOrders.filter(isClosed), [workOrders]);
   const todayRows = useMemo(() => workOrders.filter((row) => isDailyStatusTarget(row, toDateKey(new Date()))), [workOrders]);
   const aiAlerts = useMemo(() => buildMobileAiAlerts(workOrders), [workOrders]);
+  const planRows = useMemo(() => visiblePlansForUser(dailyPlans, user, mode), [dailyPlans, mode, user]);
   const mechanicRows = useMemo(() => {
     const assignedToMe = openRows.filter((row) => row.assignedMechanic?.id === user.id);
     const assignedForPreview = openRows.filter((row) => row.assignedMechanic?.id);
@@ -663,6 +726,9 @@ function MobileAppPreview({
           ? "긴급 업무"
           : "내 작업"
     : screen === "today" ? "오늘 업무" : screen === "workorders" ? "정비건" : screen === "completed" ? "완료건" : "AI 문의";
+
+  const effectiveScreenTitle = screen === "plans" ? "계획업무" : screenTitle;
+
 
   function showMetricRows(filter: Exclude<MobileMetricFilter, null>) {
     setMetricFilter(filter);
@@ -735,7 +801,7 @@ function MobileAppPreview({
           <div className="mobile-screen-title">
             <div>
               <span>{formatDate(new Date().toISOString())}</span>
-              <strong>{screenTitle}</strong>
+              <strong>{effectiveScreenTitle}</strong>
             </div>
             <span className={`chip ${screen === "ai" ? "blue" : mode === "executive" ? "amber" : "green"}`}>
               {screen === "ai" ? (aiResult?.source === "openai" ? "GPT" : "데이터") : `${previewRows.length}건`}
@@ -743,7 +809,17 @@ function MobileAppPreview({
           </div>
 
           <div className="mobile-content">
-            {screen === "ai" ? (
+            {screen === "plans" ? (
+              <MobilePlanPanel
+                currentUser={user}
+                workOrders={workOrders}
+                dailyPlans={planRows}
+                users={users}
+                mode={mode}
+                onChanged={onChanged}
+                onOpenWorkOrder={onOpenWorkOrder}
+              />
+            ) : screen === "ai" ? (
               <MobileAiPanel
                 user={user}
                 alerts={aiAlerts}
@@ -775,6 +851,10 @@ function MobileAppPreview({
               <CheckCircle2 size={15} />
               완료건
             </button>
+            <button className={screen === "plans" ? "active" : ""} type="button" onClick={() => { setScreen("plans"); setMetricFilter(null); }}>
+              <CalendarDays size={15} />
+              계획
+            </button>
             <button className={screen === "ai" ? "active" : ""} type="button" onClick={() => { setScreen("ai"); setMetricFilter(null); }}>
               <Bot size={15} />
               AI
@@ -789,10 +869,16 @@ function MobileAppPreview({
 function UnifiedWorkAppPanel({
   user,
   workOrders,
+  dailyPlans,
+  users,
+  onChanged,
   onOpenWorkOrder
 }: {
   user: AuthUser;
   workOrders: WorkOrder[];
+  dailyPlans: DailyWorkPlan[];
+  users: UserRow[];
+  onChanged: () => Promise<void>;
   onOpenWorkOrder: (id: string) => void;
 }) {
   const [screen, setScreen] = useState<MobilePreviewScreen>("today");
@@ -808,6 +894,7 @@ function UnifiedWorkAppPanel({
   const reportWaiting = useMemo(() => workOrders.filter((row) => row.status === "REPORT_SUBMITTED"), [workOrders]);
   const todayRows = useMemo(() => workOrders.filter((row) => isDailyStatusTarget(row, toDateKey(new Date()))), [workOrders]);
   const aiAlerts = useMemo(() => buildMobileAiAlerts(workOrders), [workOrders]);
+  const planRows = useMemo(() => visiblePlansForUser(dailyPlans, user, hasAnyRole(user, ["SUPER_ADMIN", "ADMIN"]) ? "admin" : hasAnyRole(user, ["EXECUTIVE"]) ? "executive" : "mechanic"), [dailyPlans, user]);
   const isMechanicOnly = hasAnyRole(user, ["MECHANIC"]) && !hasAnyRole(user, ["SUPER_ADMIN", "ADMIN", "EXECUTIVE", "RECEPTIONIST"]);
   const roleWorkRows = useMemo(() => {
     if (hasAnyRole(user, ["SUPER_ADMIN", "ADMIN"])) {
@@ -848,6 +935,8 @@ function UnifiedWorkAppPanel({
           : "내 작업"
     : screen === "today" ? "오늘 업무" : screen === "workorders" ? "정비건" : screen === "completed" ? "완료건" : "AI 업무지원";
 
+  const effectiveScreenTitle = screen === "plans" ? "계획업무" : screenTitle;
+
   function showMetricRows(filter: Exclude<MobileMetricFilter, null>) {
     setMetricFilter(filter);
     setScreen(filter === "completed" ? "completed" : "workorders");
@@ -887,6 +976,9 @@ function UnifiedWorkAppPanel({
         <button className={screen === "completed" && !metricFilter ? "active" : ""} type="button" onClick={() => { setScreen("completed"); setMetricFilter(null); }}>
           <CheckCircle2 size={16} />완료건
         </button>
+        <button className={screen === "plans" ? "active" : ""} type="button" onClick={() => { setScreen("plans"); setMetricFilter(null); }}>
+          <CalendarDays size={16} />계획업무
+        </button>
         <button className={screen === "ai" ? "active" : ""} type="button" onClick={() => { setScreen("ai"); setMetricFilter(null); }}>
           <Bot size={16} />AI
         </button>
@@ -913,7 +1005,17 @@ function UnifiedWorkAppPanel({
           <small>P1 미완료</small>
         </button>
       </div>
-      {screen === "ai" ? (
+      {screen === "plans" ? (
+        <PlanningWorkflow
+          currentUser={user}
+          workOrders={workOrders}
+          dailyPlans={planRows}
+          users={users}
+          compact={false}
+          onChanged={onChanged}
+          onOpenWorkOrder={onOpenWorkOrder}
+        />
+      ) : screen === "ai" ? (
         <DesktopAiPanel
           user={user}
           alerts={aiAlerts}
@@ -930,7 +1032,7 @@ function UnifiedWorkAppPanel({
           <section className="section unified-work-list">
             <div className="section-header">
               <div>
-                <h2>{screenTitle}</h2>
+                <h2>{effectiveScreenTitle}</h2>
                 <p>휴대폰 앱과 같은 기준으로 필터링된 정비건입니다. 항목을 선택하면 데스크톱 상세 화면에서 변경/승인/보고를 이어서 처리합니다.</p>
               </div>
               <span className="chip green">{sortedRows.length}건</span>
@@ -2109,6 +2211,436 @@ function WorkList({
           </div>
         </button>
       ))}
+    </div>
+  );
+}
+
+function PlanningPanel({
+  currentUser,
+  workOrders,
+  dailyPlans,
+  users,
+  onChanged,
+  onOpenWorkOrder
+}: {
+  currentUser: AuthUser;
+  workOrders: WorkOrder[];
+  dailyPlans: DailyWorkPlan[];
+  users: UserRow[];
+  onChanged: () => Promise<void>;
+  onOpenWorkOrder: (id: string) => void;
+}) {
+  return (
+    <div className="section planning-panel">
+      <div className="section-header">
+        <div>
+          <h2>계획업무</h2>
+          <p>미결 정비건을 선택해 계획업무를 요청하고, 관리자가 승인/반려/수정/최종확정까지 처리합니다.</p>
+        </div>
+        <span className="chip blue"><CalendarDays size={14} />계획 {dailyPlans.length}건</span>
+      </div>
+      <PlanningWorkflow
+        currentUser={currentUser}
+        workOrders={workOrders}
+        dailyPlans={visiblePlansForUser(dailyPlans, currentUser, hasAnyRole(currentUser, ["SUPER_ADMIN", "ADMIN"]) ? "admin" : hasAnyRole(currentUser, ["EXECUTIVE"]) ? "executive" : "mechanic")}
+        users={users}
+        compact={false}
+        onChanged={onChanged}
+        onOpenWorkOrder={onOpenWorkOrder}
+      />
+    </div>
+  );
+}
+
+function MobilePlanPanel({
+  currentUser,
+  workOrders,
+  dailyPlans,
+  users,
+  mode,
+  onChanged,
+  onOpenWorkOrder
+}: {
+  currentUser: AuthUser;
+  workOrders: WorkOrder[];
+  dailyPlans: DailyWorkPlan[];
+  users: UserRow[];
+  mode: MobilePreviewMode;
+  onChanged: () => Promise<void>;
+  onOpenWorkOrder: (id: string) => void;
+}) {
+  return (
+    <PlanningWorkflow
+      currentUser={currentUser}
+      workOrders={workOrders}
+      dailyPlans={dailyPlans}
+      users={users}
+      compact
+      mobileMode={mode}
+      onChanged={onChanged}
+      onOpenWorkOrder={onOpenWorkOrder}
+    />
+  );
+}
+
+function PlanningWorkflow({
+  currentUser,
+  workOrders,
+  dailyPlans,
+  users,
+  compact,
+  mobileMode,
+  onChanged,
+  onOpenWorkOrder
+}: {
+  currentUser: AuthUser;
+  workOrders: WorkOrder[];
+  dailyPlans: DailyWorkPlan[];
+  users: UserRow[];
+  compact: boolean;
+  mobileMode?: MobilePreviewMode;
+  onChanged: () => Promise<void>;
+  onOpenWorkOrder: (id: string) => void;
+}) {
+  const canCreate = hasAnyRole(currentUser, ["SUPER_ADMIN", "ADMIN", "MECHANIC"]);
+  const canAdminPlan = hasAnyRole(currentUser, ["SUPER_ADMIN", "ADMIN"]) || mobileMode === "admin";
+  const openRows = useMemo(() => sortWorkOrders(workOrders.filter((row) => !isClosed(row)), "priority").slice(0, compact ? 8 : 24), [compact, workOrders]);
+  const alerts = useMemo(() => buildPlanAlerts(dailyPlans, currentUser, canAdminPlan), [canAdminPlan, currentUser, dailyPlans]);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
+  const [planDate, setPlanDate] = useState(() => toDateKey(new Date()));
+  const [requestMemo, setRequestMemo] = useState("");
+  const [message, setMessage] = useState("");
+  const [saving, setSaving] = useState(false);
+  const selectedPlan = dailyPlans.find((plan) => plan.id === selectedPlanId) ?? dailyPlans[0] ?? null;
+
+  function toggleWorkOrder(id: string) {
+    setSelectedIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
+  }
+
+  async function createPlan() {
+    if (!selectedIds.length) {
+      setMessage("계획업무로 묶을 미결 정비건을 선택하세요.");
+      return;
+    }
+    setSaving(true);
+    setMessage("");
+    try {
+      await postJson<DailyWorkPlan>("/api/daily-plans/request", {
+        planDate,
+        workOrderIds: selectedIds,
+        itemDetails: selectedIds.map((workOrderId) => ({
+          workOrderId,
+          mechanicMemo: hasAnyRole(currentUser, ["MECHANIC"]) ? requestMemo : undefined,
+          adminMemo: canAdminPlan ? requestMemo : undefined
+        }))
+      });
+      setSelectedIds([]);
+      setRequestMemo("");
+      setMessage("계획업무가 관리자에게 공유되었습니다.");
+      await onChanged();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "계획업무 생성에 실패했습니다.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className={`planning-layout ${compact ? "compact" : ""}`}>
+      <section className="planning-column">
+        <div className="planning-alert-box">
+          <div className="mobile-ai-alert-head">
+            <span><Bell size={14} />계획 알림</span>
+            <strong>{alerts.length ? `${alerts.length}건` : "대기 없음"}</strong>
+          </div>
+          <div className="planning-alert-list">
+            {alerts.length ? alerts.map((alert) => (
+              <button className={`planning-alert ${alert.tone}`} key={alert.id} type="button" onClick={() => setSelectedPlanId(alert.planId)}>
+                <span>{alert.label}</span>
+                <strong>{alert.title}</strong>
+                <p>{alert.body}</p>
+              </button>
+            )) : <p className="mobile-empty">확인할 계획업무 알림이 없습니다.</p>}
+          </div>
+        </div>
+
+        {canCreate ? (
+          <div className="planning-create">
+            <div className="section-header">
+              <div>
+                <h3>미결 정비건으로 계획 작성</h3>
+                <p>선택한 정비건을 계획업무로 묶어 관리자에게 공유합니다.</p>
+              </div>
+              <span className="chip green">{selectedIds.length}건 선택</span>
+            </div>
+            <Input label="계획일자" type="date" value={planDate} onChange={setPlanDate} />
+            <div className="plan-select-list">
+              {openRows.map((row) => (
+                <label className={`plan-select-row ${selectedIds.includes(row.id) ? "active" : ""}`} key={row.id}>
+                  <input type="checkbox" checked={selectedIds.includes(row.id)} onChange={() => toggleWorkOrder(row.id)} />
+                  <span>
+                    <strong>{row.requestNo} · {row.customer?.name ?? "-"}</strong>
+                    <small>{priorityLabel[row.priorityLevel]} · {row.assignedMechanic?.name ?? "담당 미지정"} · 목표 {formatDate(row.targetDueDate)}</small>
+                    <small>{row.faultDescription}</small>
+                  </span>
+                </label>
+              ))}
+              {!openRows.length ? <p className="notice">계획업무로 선택할 미결 정비건이 없습니다.</p> : null}
+            </div>
+            <div className="field">
+              <label>{canAdminPlan ? "관리자 메모" : "정비사 메모"}</label>
+              <textarea value={requestMemo} onChange={(event) => setRequestMemo(event.target.value)} placeholder="작업 순서, 준비 부품, 현장 유의사항 등을 입력하세요." />
+            </div>
+            {message ? <p className={message.includes("실패") ? "error" : "notice"}>{message}</p> : null}
+            <button className="primary" type="button" disabled={saving} onClick={createPlan}>
+              <Plus size={16} />{saving ? "공유 중" : "계획업무 공유"}
+            </button>
+          </div>
+        ) : null}
+      </section>
+
+      <section className="planning-column">
+        <div className="planning-list">
+          <div className="section-header">
+            <div>
+              <h3>계획 목록</h3>
+              <p>승인 대기, 반려, 승인, 최종확정 상태를 확인합니다.</p>
+            </div>
+            <span className="chip">{dailyPlans.length}건</span>
+          </div>
+          {dailyPlans.length ? dailyPlans.map((plan) => (
+            <PlanCard
+              key={plan.id}
+              plan={plan}
+              active={selectedPlan?.id === plan.id}
+              onClick={() => setSelectedPlanId(plan.id)}
+            />
+          )) : <p className="notice">표시할 계획업무가 없습니다.</p>}
+        </div>
+        <PlanDetail
+          plan={selectedPlan}
+          currentUser={currentUser}
+          users={users}
+          compact={compact}
+          onChanged={onChanged}
+          onOpenWorkOrder={onOpenWorkOrder}
+        />
+      </section>
+    </div>
+  );
+}
+
+function PlanCard({ plan, active, onClick }: { plan: DailyWorkPlan; active: boolean; onClick: () => void }) {
+  return (
+    <button className={`plan-card ${active ? "selected" : ""} ${plan.status.toLowerCase().replace("_", "-")}`} type="button" onClick={onClick}>
+      <div>
+        <strong>{formatDate(plan.planDate)} 계획 · {plan.items.length}건</strong>
+        <p>{plan.items[0]?.workOrder.customer?.name ?? "-"} {plan.items.length > 1 ? `외 ${plan.items.length - 1}건` : ""}</p>
+      </div>
+      <span className={`chip ${planStatusChip(plan.status)}`}>{planStatusLabel(plan.status)}</span>
+    </button>
+  );
+}
+
+function PlanDetail({
+  plan,
+  currentUser,
+  users,
+  compact,
+  onChanged,
+  onOpenWorkOrder
+}: {
+  plan: DailyWorkPlan | null;
+  currentUser: AuthUser;
+  users: UserRow[];
+  compact: boolean;
+  onChanged: () => Promise<void>;
+  onOpenWorkOrder: (id: string) => void;
+}) {
+  const canAdminPlan = hasAnyRole(currentUser, ["SUPER_ADMIN", "ADMIN"]);
+  const locked = plan?.status === "FINAL_CONFIRMED";
+  const mechanics = users.filter((user) => user.roles.some((role) => role.role.code === "MECHANIC"));
+  const mechanicOptions = [{ value: "", label: "담당 미지정" }, ...mechanics.map((user) => ({ value: user.id, label: `${user.name} ${user.title ?? ""}`.trim() }))];
+  const [draftDate, setDraftDate] = useState("");
+  const [draftMemo, setDraftMemo] = useState("");
+  const [itemDrafts, setItemDrafts] = useState<{ workOrderId: string; mechanicId?: string | null; adminMemo: string; mechanicMemo: string }[]>([]);
+  const [message, setMessage] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setDraftDate(toDateKey(plan?.planDate ?? new Date()));
+    setDraftMemo(plan?.reviewMemo ?? "");
+    setItemDrafts((plan?.items ?? []).map((item) => ({
+      workOrderId: item.workOrderId,
+      mechanicId: item.mechanicId,
+      adminMemo: item.adminMemo ?? "",
+      mechanicMemo: item.mechanicMemo ?? ""
+    })));
+    setMessage("");
+  }, [plan?.id, plan?.planDate, plan?.reviewMemo, plan?.items]);
+
+  if (!plan) return <div className="planning-detail">계획업무를 선택하세요.</div>;
+
+  function updateItem(workOrderId: string, patch: Partial<{ mechanicId: string | null; adminMemo: string; mechanicMemo: string }>) {
+    setItemDrafts((current) => current.map((item) => item.workOrderId === workOrderId ? { ...item, ...patch } : item));
+  }
+
+  async function submitUpdate() {
+    if (!plan || locked) return;
+    setSaving(true);
+    setMessage("");
+    try {
+      await api<DailyWorkPlan>(`/api/daily-plans/${plan.id}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          planDate: draftDate,
+          reviewMemo: draftMemo,
+          itemDetails: itemDrafts
+        })
+      });
+      setMessage(canAdminPlan ? "계획 수정 알림을 정비사에게 보냈습니다." : "계획 수정 요청을 관리자에게 보냈습니다.");
+      await onChanged();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "계획업무 수정에 실패했습니다.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function approvePlan() {
+    if (!plan) return;
+    setSaving(true);
+    setMessage("");
+    try {
+      await postJson<DailyWorkPlan>(`/api/daily-plans/${plan.id}/approve`, { memo: draftMemo });
+      setMessage("계획업무를 승인했고 예정업무에 반영했습니다.");
+      await onChanged();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "계획업무 승인에 실패했습니다.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function rejectPlan() {
+    if (!plan) return;
+    const memo = window.prompt("반려 사유", draftMemo || "일정 또는 세부업무 보완 필요");
+    if (!memo) return;
+    setSaving(true);
+    setMessage("");
+    try {
+      await postJson<DailyWorkPlan>(`/api/daily-plans/${plan.id}/reject`, { memo });
+      setMessage("계획업무를 반려했고 정비사에게 알림을 보냈습니다.");
+      await onChanged();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "계획업무 반려에 실패했습니다.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function finalizePlan() {
+    if (!plan) return;
+    setSaving(true);
+    setMessage("");
+    try {
+      await postJson<DailyWorkPlan>(`/api/daily-plans/${plan.id}/finalize`, { memo: draftMemo || "최종확정" });
+      setMessage("계획업무를 최종확정했습니다. 추가 수정이 제한됩니다.");
+      await onChanged();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "계획업무 최종확정에 실패했습니다.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="planning-detail">
+      <div className="section-header">
+        <div>
+          <h3>{formatDate(plan.planDate)} 계획 세부업무</h3>
+          <p>{plan.requestedBy?.name ?? "요청자 미지정"} 요청 · {plan.reviewedBy?.name ? `${plan.reviewedBy.name} 검토` : "관리자 검토 대기"}</p>
+        </div>
+        <span className={`chip ${planStatusChip(plan.status)}`}>{planStatusLabel(plan.status)}</span>
+      </div>
+      {locked ? <p className="notice"><Lock size={14} /> 최종확정된 계획업무입니다. 추가 수정이 제한됩니다.</p> : null}
+      <div className="form-row">
+        <Input label="계획일자" type="date" value={draftDate} onChange={setDraftDate} />
+        <Input label="검토/변경 메모" value={draftMemo} onChange={setDraftMemo} />
+      </div>
+      <div className="plan-item-list">
+        {plan.items.map((item) => {
+          const draft = itemDrafts.find((row) => row.workOrderId === item.workOrderId);
+          return (
+            <article className={`plan-item-card ${priorityClass[item.workOrder.priorityLevel]}`} key={item.id}>
+              <div className="plan-item-head">
+                <div>
+                  <button className="link-button" type="button" onClick={() => onOpenWorkOrder(item.workOrderId)}>
+                    {item.workOrder.requestNo}
+                  </button>
+                  <strong>{item.workOrder.customer?.name ?? "-"} · {item.workOrder.equipmentInput ?? item.workOrder.equipmentNoNormalized ?? "-"}</strong>
+                  <p>{item.workOrder.faultDescription}</p>
+                </div>
+                <span className={`chip ${priorityChip[item.workOrder.priorityLevel]}`}>{priorityLabel[item.workOrder.priorityLevel]}</span>
+              </div>
+              <div className="form-row">
+                {canAdminPlan ? (
+                  <Select
+                    label="담당 정비사"
+                    value={draft?.mechanicId ?? ""}
+                    onChange={(value) => updateItem(item.workOrderId, { mechanicId: value || null })}
+                    options={mechanicOptions}
+                  />
+                ) : (
+                  <Info label="담당 정비사" value={item.mechanic?.name ?? item.workOrder.assignedMechanic?.name ?? "담당 미지정"} />
+                )}
+                <Info label="현재 목표일" value={formatDate(item.workOrder.targetDueDate)} />
+              </div>
+              <div className="form-row">
+                <div className="field">
+                  <label>관리자 세부지시</label>
+                  <textarea
+                    value={draft?.adminMemo ?? ""}
+                    disabled={!canAdminPlan || locked}
+                    onChange={(event) => updateItem(item.workOrderId, { adminMemo: event.target.value })}
+                    placeholder="관리자 수정사항, 우선순위, 고객 공유 내용"
+                  />
+                </div>
+                <div className="field">
+                  <label>정비사 추가의견</label>
+                  <textarea
+                    value={draft?.mechanicMemo ?? ""}
+                    disabled={locked}
+                    onChange={(event) => updateItem(item.workOrderId, { mechanicMemo: event.target.value })}
+                    placeholder="현장 상황, 부품 준비, 일정 변경 의견"
+                  />
+                </div>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+      {message ? <p className={message.includes("실패") || message.includes("수 없습니다") ? "error" : "notice"}>{message}</p> : null}
+      <div className="toolbar">
+        <button type="button" disabled={saving || locked} onClick={submitUpdate}>
+          <Send size={16} />{canAdminPlan ? "수정 알림 전송" : "수정 요청"}
+        </button>
+        {canAdminPlan ? (
+          <>
+            <button className="primary" type="button" disabled={saving || locked} onClick={approvePlan}>
+              <CheckCircle2 size={16} />승인
+            </button>
+            <button className="danger" type="button" disabled={saving || locked} onClick={rejectPlan}>
+              <XCircle size={16} />반려
+            </button>
+            <button type="button" disabled={saving || locked} onClick={finalizePlan}>
+              <Lock size={16} />최종확정
+            </button>
+          </>
+        ) : null}
+      </div>
+      {compact ? <p className="mobile-empty">PC 화면의 계획업무 탭에서도 동일하게 작성/수정할 수 있습니다.</p> : null}
     </div>
   );
 }
@@ -3490,6 +4022,50 @@ function isDateWithinSchedule(key: string, row: WorkOrder) {
   const start = toDateKey(row.requestDate);
   const end = toDateKey(row.targetDueDate ?? row.requestDate);
   return key >= start && key <= end;
+}
+
+function visiblePlansForUser(plans: DailyWorkPlan[], user: AuthUser, mode: MobilePreviewMode) {
+  if (mode === "executive") return plans.filter((plan) => ["APPROVED", "FINAL_CONFIRMED"].includes(plan.status));
+  if (mode === "admin" || hasAnyRole(user, ["SUPER_ADMIN", "ADMIN"])) return plans;
+  return plans.filter((plan) => plan.requestedById === user.id || plan.items.some((item) => item.mechanicId === user.id));
+}
+
+function buildPlanAlerts(plans: DailyWorkPlan[], user: AuthUser, canAdminPlan: boolean) {
+  return plans
+    .filter((plan) => {
+      if (canAdminPlan) return plan.status === "REQUESTED";
+      return plan.requestedById === user.id || plan.items.some((item) => item.mechanicId === user.id);
+    })
+    .map((plan) => {
+      const adminLabel = plan.status === "REQUESTED" ? "검토 필요" : planStatusLabel(plan.status);
+      const mechanicLabel = plan.status === "REJECTED" ? "반려 확인" : plan.status === "APPROVED" ? "승인 반영" : plan.status === "FINAL_CONFIRMED" ? "최종확정" : "변경 확인";
+      return {
+        id: `plan-alert-${plan.id}-${plan.status}`,
+        planId: plan.id,
+        label: canAdminPlan ? adminLabel : mechanicLabel,
+        title: `${formatDate(plan.planDate)} 계획 · ${plan.items.length}건`,
+        body: plan.reviewMemo ?? (canAdminPlan ? "정비사가 계획업무 검토를 요청했습니다." : "계획업무 변경사항을 확인하세요."),
+        tone: plan.status === "REJECTED" ? "danger" : plan.status === "FINAL_CONFIRMED" || plan.status === "APPROVED" ? "success" : "warning"
+      };
+    });
+}
+
+function planStatusLabel(status: DailyPlanStatus) {
+  const labels: Record<DailyPlanStatus, string> = {
+    DRAFT: "임시저장",
+    REQUESTED: "승인요청",
+    APPROVED: "승인됨",
+    REJECTED: "반려",
+    FINAL_CONFIRMED: "최종확정"
+  };
+  return labels[status] ?? status;
+}
+
+function planStatusChip(status: DailyPlanStatus) {
+  if (status === "REJECTED") return "red";
+  if (status === "APPROVED" || status === "FINAL_CONFIRMED") return "green";
+  if (status === "REQUESTED") return "amber";
+  return "blue";
 }
 
 function formatCell(value: unknown) {

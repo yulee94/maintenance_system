@@ -6,7 +6,7 @@ import { auditLog } from "@/lib/audit";
 import { ApiError, handleApiError, ok, readJson } from "@/lib/api";
 import { requireUser } from "@/lib/auth";
 import { appEnv } from "@/lib/env";
-import { demoApproveDailyPlan } from "@/lib/demo";
+import { demoFinalizeDailyPlan } from "@/lib/demo";
 
 const schema = z.object({ memo: z.string().optional() });
 
@@ -34,7 +34,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     const user = await requireUser(request, [RoleCode.ADMIN]);
     const { id } = await context.params;
     const input = await readJson(request, schema).catch(() => ({ memo: undefined }));
-    if (appEnv.demoMode) return ok(await demoApproveDailyPlan(id, user, input.memo));
+    if (appEnv.demoMode) return ok(await demoFinalizeDailyPlan(id, user, input.memo));
 
     const before = await prisma.dailyWorkPlan.findUnique({ where: { id }, include: { items: true } });
     if (!before) throw new ApiError(404, "계획업무를 찾을 수 없습니다.");
@@ -44,10 +44,10 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
       const updated = await tx.dailyWorkPlan.update({
         where: { id },
         data: {
-          status: DailyPlanStatus.APPROVED,
+          status: DailyPlanStatus.FINAL_CONFIRMED,
           reviewedById: user.id,
           reviewedAt: new Date(),
-          reviewMemo: input.memo ?? before.reviewMemo
+          reviewMemo: input.memo ?? before.reviewMemo ?? "관리자 최종확정"
         },
         include: { items: true }
       });
@@ -65,7 +65,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
             status: nextStatus,
             updatedById: user.id,
             statusHistories: nextStatus && nextStatus !== workOrder?.status
-              ? { create: { toStatus: nextStatus, reason: "계획업무 승인 반영", changedById: user.id } }
+              ? { create: { toStatus: nextStatus, reason: "계획업무 최종확정", changedById: user.id } }
               : undefined
           }
         });
@@ -79,13 +79,13 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
         data: recipients.map((recipientId) => ({
           userId: recipientId,
           type: "DAILY_PLAN_REVIEWED",
-          title: "계획업무 승인",
-          body: `${user.name}님이 ${row.items.length}건의 계획업무를 승인했습니다. 예정업무에 반영되었습니다.`
+          title: "계획업무 최종확정",
+          body: `${user.name}님이 ${row.items.length}건의 계획업무를 최종확정했습니다. 추가 수정은 제한됩니다.`
         }))
       });
     }
 
-    await auditLog({ user, request, action: "daily_plan.approve", targetType: "dailyWorkPlan", targetId: id, before, after: row });
+    await auditLog({ user, request, action: "daily_plan.final_confirm", targetType: "dailyWorkPlan", targetId: id, before, after: row });
     return ok(row);
   } catch (error) {
     return handleApiError(error);

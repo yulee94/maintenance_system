@@ -1,4 +1,5 @@
 import {
+  DailyPlanStatus,
   EquipmentType,
   PriorityLevel,
   RoleCode,
@@ -112,9 +113,38 @@ type DemoWorkOrder = {
   assignmentHistories: unknown[];
 };
 
+type DemoDailyPlanItem = {
+  id: string;
+  planId: string;
+  workOrderId: string;
+  mechanicId?: string | null;
+  orderIndex: number;
+  adminMemo?: string | null;
+  mechanicMemo?: string | null;
+  createdAt: string;
+  workOrder: DemoWorkOrder;
+  mechanic?: { id: string; name: string; title?: string } | null;
+};
+
+type DemoDailyPlan = {
+  id: string;
+  planDate: string;
+  status: DailyPlanStatus;
+  requestedById?: string | null;
+  reviewedById?: string | null;
+  reviewedAt?: string | null;
+  reviewMemo?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  requestedBy?: { id: string; name: string; title?: string } | null;
+  reviewedBy?: { id: string; name: string; title?: string } | null;
+  items: DemoDailyPlanItem[];
+};
+
 type DemoStore = {
   users: DemoUser[];
   workOrders: DemoWorkOrder[];
+  dailyPlans: DemoDailyPlan[];
   auditLogs: Record<string, unknown>[];
 };
 
@@ -365,6 +395,62 @@ function templateSourceMemo(row: DailyStatusTemplateRow) {
   return `${row.section === "pending" ? "미결 목록" : "일일 진행업무"} · 구분 ${row.category} · 템플릿 행 ${row.sourceRow}`;
 }
 
+function buildDemoDailyPlans(users: DemoUser[], workOrders: DemoWorkOrder[]) {
+  const mechanic = users.find((user) => user.roles.includes(RoleCode.MECHANIC));
+  const admin = users.find((user) => user.loginId === "ko.ms") ?? users.find((user) => user.roles.includes(RoleCode.ADMIN));
+  const closedStatuses: WorkOrderStatus[] = [WorkOrderStatus.FINAL_COMPLETED, WorkOrderStatus.ARCHIVED, WorkOrderStatus.CANCELLED];
+  const openRows = workOrders.filter((row) => !closedStatuses.includes(row.status));
+  const urgentRows = openRows.filter((row) => row.priorityLevel === PriorityLevel.P1 || row.status === WorkOrderStatus.DELAYED).slice(0, 3);
+  const assignedRows = openRows.filter((row) => row.assignedMechanic?.id).slice(3, 6);
+  const requestedRows = urgentRows.length ? urgentRows : openRows.slice(0, 3);
+  const approvedRows = assignedRows.length ? assignedRows : openRows.slice(3, 6);
+  const now = new Date().toISOString();
+
+  const makePlan = (
+    id: string,
+    rows: DemoWorkOrder[],
+    status: DailyPlanStatus,
+    planDate: string,
+    requestedBy?: DemoUser,
+    reviewedBy?: DemoUser,
+    reviewMemo?: string
+  ): DemoDailyPlan => ({
+    id,
+    planDate,
+    status,
+    requestedById: requestedBy?.id ?? null,
+    reviewedById: reviewedBy?.id ?? null,
+    reviewedAt: status === DailyPlanStatus.REQUESTED ? null : day(0, 10),
+    reviewMemo: reviewMemo ?? null,
+    createdAt: day(-1, 16),
+    updatedAt: now,
+    requestedBy: requestedBy ? userRef(requestedBy) : null,
+    reviewedBy: reviewedBy ? userRef(reviewedBy) : null,
+    items: rows.map((row, index) => {
+      const itemMechanic = row.assignedMechanic?.id
+        ? users.find((user) => user.id === row.assignedMechanic?.id)
+        : mechanic;
+      return {
+        id: `${id}-item-${index + 1}`,
+        planId: id,
+        workOrderId: row.id,
+        mechanicId: itemMechanic?.id ?? null,
+        orderIndex: index + 1,
+        adminMemo: index === 0 ? "현장 도착 전 고객 통화 후 안전조치 확인" : null,
+        mechanicMemo: index === 0 ? "부품 및 공구 사전 준비 예정" : null,
+        createdAt: day(-1, 16),
+        workOrder: row,
+        mechanic: itemMechanic ? userRef(itemMechanic) : null
+      };
+    })
+  });
+
+  return [
+    makePlan("demo-plan-requested", requestedRows, DailyPlanStatus.REQUESTED, day(1, 9), mechanic, undefined, "정비사 요청 계획 검토 필요"),
+    makePlan("demo-plan-approved", approvedRows, DailyPlanStatus.APPROVED, day(0, 9), mechanic, admin, "오전 긴급건 우선 처리 승인")
+  ].filter((plan) => plan.items.length);
+}
+
 async function makeStore(): Promise<DemoStore> {
   const users: DemoUser[] = [
     {
@@ -491,9 +577,11 @@ async function makeStore(): Promise<DemoStore> {
   const [superAdmin, executive, admin, receptionist] = users;
   const templateWorkOrders = await buildTemplateWorkOrders(users, templateRows);
   const workOrders = templateWorkOrders;
+  const dailyPlans = buildDemoDailyPlans(users, workOrders);
   const store = {
     users,
     workOrders,
+    dailyPlans,
     auditLogs: [
       {
         id: "demo-audit-seed",
@@ -599,6 +687,133 @@ export async function demoWorkOrders() {
     row.approvalLine ??= makeDemoApprovalLine(row, store);
   }
   return store.workOrders;
+}
+
+export async function demoDailyPlans() {
+  const store = await demoStore();
+  return store.dailyPlans;
+}
+
+export async function demoRequestDailyPlan(
+  input: {
+    planDate: string;
+    workOrderIds: string[];
+    itemDetails?: { workOrderId: string; mechanicId?: string | null; adminMemo?: string; mechanicMemo?: string }[];
+  },
+  actor?: { id: string; name: string; roles: RoleCode[] }
+) {
+  const store = await demoStore();
+  const planId = `demo-plan-${Date.now()}`;
+  const planDate = new Date(input.planDate).toISOString();
+  const detailByWorkOrder = new Map((input.itemDetails ?? []).map((item) => [item.workOrderId, item]));
+  const requestedBy = store.users.find((user) => user.id === actor?.id);
+  const items = input.workOrderIds.map((workOrderId, index) => {
+    const workOrder = findWorkOrder(store, workOrderId);
+    const detail = detailByWorkOrder.get(workOrderId);
+    const mechanic =
+      store.users.find((user) => user.id === detail?.mechanicId) ??
+      store.users.find((user) => user.id === workOrder.assignedMechanic?.id) ??
+      (actor?.roles.includes(RoleCode.MECHANIC) ? store.users.find((user) => user.id === actor.id) : undefined);
+    return makeDemoPlanItem(planId, workOrder, index, mechanic, detail?.adminMemo, detail?.mechanicMemo);
+  });
+  const plan: DemoDailyPlan = {
+    id: planId,
+    planDate,
+    status: DailyPlanStatus.REQUESTED,
+    requestedById: actor?.id ?? null,
+    reviewedById: null,
+    reviewedAt: null,
+    reviewMemo: "계획업무 승인 요청",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    requestedBy: requestedBy ? userRef(requestedBy) : actor ? { id: actor.id, name: actor.name } : null,
+    reviewedBy: null,
+    items
+  };
+  store.dailyPlans.unshift(plan);
+  audit(store, "daily_plan.request", "dailyWorkPlan", plan.id, plan);
+  return plan;
+}
+
+export async function demoUpdateDailyPlan(
+  id: string,
+  input: {
+    planDate?: string;
+    reviewMemo?: string;
+    itemDetails?: { workOrderId: string; mechanicId?: string | null; adminMemo?: string; mechanicMemo?: string }[];
+  },
+  actor?: { id: string; name: string; roles: RoleCode[] }
+) {
+  const store = await demoStore();
+  const plan = findDailyPlan(store, id);
+  if (plan.status === DailyPlanStatus.FINAL_CONFIRMED) throw new Error("최종확정된 계획업무는 수정할 수 없습니다.");
+  if (input.planDate) plan.planDate = new Date(input.planDate).toISOString();
+  if (typeof input.reviewMemo === "string") plan.reviewMemo = input.reviewMemo;
+  if (input.itemDetails?.length) {
+    plan.items = input.itemDetails.map((detail, index) => {
+      const workOrder = findWorkOrder(store, detail.workOrderId);
+      const mechanic =
+        store.users.find((user) => user.id === detail.mechanicId) ??
+        store.users.find((user) => user.id === workOrder.assignedMechanic?.id);
+      return makeDemoPlanItem(plan.id, workOrder, index, mechanic, detail.adminMemo, detail.mechanicMemo);
+    });
+  }
+  plan.status = DailyPlanStatus.REQUESTED;
+  plan.reviewedById = null;
+  plan.reviewedBy = null;
+  plan.reviewedAt = null;
+  plan.updatedAt = new Date().toISOString();
+  plan.reviewMemo ||= actor?.roles.includes(RoleCode.ADMIN) || actor?.roles.includes(RoleCode.SUPER_ADMIN)
+    ? "관리자가 계획 세부업무를 수정했습니다."
+    : "정비사가 계획업무를 수정했습니다.";
+  audit(store, "daily_plan.update", "dailyWorkPlan", plan.id, plan);
+  return plan;
+}
+
+export async function demoApproveDailyPlan(id: string, actor?: { id: string; name: string; roles: RoleCode[] }, memo?: string) {
+  const store = await demoStore();
+  const plan = findDailyPlan(store, id);
+  if (plan.status === DailyPlanStatus.FINAL_CONFIRMED) throw new Error("이미 최종확정된 계획업무입니다.");
+  const reviewer = store.users.find((user) => user.id === actor?.id);
+  plan.status = DailyPlanStatus.APPROVED;
+  plan.reviewedById = actor?.id ?? null;
+  plan.reviewedBy = reviewer ? userRef(reviewer) : actor ? { id: actor.id, name: actor.name } : null;
+  plan.reviewedAt = new Date().toISOString();
+  plan.reviewMemo = memo ?? plan.reviewMemo ?? "계획업무 승인";
+  plan.updatedAt = plan.reviewedAt;
+  applyDailyPlanToWorkOrders(plan);
+  audit(store, "daily_plan.approve", "dailyWorkPlan", plan.id, plan);
+  return plan;
+}
+
+export async function demoRejectDailyPlan(id: string, actor?: { id: string; name: string; roles: RoleCode[] }, memo?: string) {
+  const store = await demoStore();
+  const plan = findDailyPlan(store, id);
+  if (plan.status === DailyPlanStatus.FINAL_CONFIRMED) throw new Error("최종확정된 계획업무는 반려할 수 없습니다.");
+  const reviewer = store.users.find((user) => user.id === actor?.id);
+  plan.status = DailyPlanStatus.REJECTED;
+  plan.reviewedById = actor?.id ?? null;
+  plan.reviewedBy = reviewer ? userRef(reviewer) : actor ? { id: actor.id, name: actor.name } : null;
+  plan.reviewedAt = new Date().toISOString();
+  plan.reviewMemo = memo ?? "계획 세부업무 보완 필요";
+  plan.updatedAt = plan.reviewedAt;
+  audit(store, "daily_plan.reject", "dailyWorkPlan", plan.id, plan);
+  return plan;
+}
+
+export async function demoFinalizeDailyPlan(id: string, actor?: { id: string; name: string; roles: RoleCode[] }, memo?: string) {
+  const store = await demoStore();
+  const plan = findDailyPlan(store, id);
+  const reviewer = store.users.find((user) => user.id === actor?.id);
+  plan.status = DailyPlanStatus.FINAL_CONFIRMED;
+  plan.reviewedById = actor?.id ?? plan.reviewedById ?? null;
+  plan.reviewedBy = reviewer ? userRef(reviewer) : plan.reviewedBy ?? (actor ? { id: actor.id, name: actor.name } : null);
+  plan.reviewedAt = new Date().toISOString();
+  plan.reviewMemo = memo ?? plan.reviewMemo ?? "관리자 최종확정";
+  plan.updatedAt = plan.reviewedAt;
+  applyDailyPlanToWorkOrders(plan);
+  audit(store, "daily_plan.final_confirm", "dailyWorkPlan", plan.id, plan);
+  return plan;
 }
 
 export async function demoCreateWorkOrder(input: {
@@ -919,6 +1134,52 @@ function findWorkOrder(store: DemoStore, id: string) {
   const row = store.workOrders.find((workOrder) => workOrder.id === id);
   if (!row) throw new Error("Demo work order not found.");
   return row;
+}
+
+function findDailyPlan(store: DemoStore, id: string) {
+  const plan = store.dailyPlans.find((item) => item.id === id);
+  if (!plan) throw new Error("Demo daily plan not found.");
+  return plan;
+}
+
+function makeDemoPlanItem(
+  planId: string,
+  workOrder: DemoWorkOrder,
+  index: number,
+  mechanic?: DemoUser,
+  adminMemo?: string | null,
+  mechanicMemo?: string | null
+): DemoDailyPlanItem {
+  const assigned = mechanic ?? null;
+  return {
+    id: `${planId}-item-${workOrder.id}-${index + 1}`,
+    planId,
+    workOrderId: workOrder.id,
+    mechanicId: assigned?.id ?? null,
+    orderIndex: index + 1,
+    adminMemo: adminMemo ?? null,
+    mechanicMemo: mechanicMemo ?? null,
+    createdAt: new Date().toISOString(),
+    workOrder,
+    mechanic: assigned ? userRef(assigned) : null
+  };
+}
+
+function applyDailyPlanToWorkOrders(plan: DemoDailyPlan) {
+  for (const item of plan.items) {
+    item.workOrder.targetDueDate = plan.planDate;
+    if (item.mechanic) item.workOrder.assignedMechanic = item.mechanic;
+    const assignableStatuses: WorkOrderStatus[] = [WorkOrderStatus.RECEIVED, WorkOrderStatus.UNASSIGNED];
+    if (assignableStatuses.includes(item.workOrder.status)) {
+      item.workOrder.status = WorkOrderStatus.ASSIGNED;
+    }
+    item.workOrder.statusHistories.unshift({
+      id: `demo-status-${Date.now()}-${item.workOrderId}`,
+      toStatus: item.workOrder.status,
+      reason: plan.status === DailyPlanStatus.FINAL_CONFIRMED ? "계획업무 최종확정" : "계획업무 승인 반영",
+      createdAt: new Date().toISOString()
+    });
+  }
 }
 
 function makeDemoApprovalLine(row: DemoWorkOrder, store: DemoStore, adminUser?: DemoUser, executiveUser?: DemoUser): DemoApprovalStep[] {
