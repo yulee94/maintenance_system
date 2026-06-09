@@ -110,9 +110,18 @@ type WorkReportAttachment = {
   originalName: string;
   mimeType: string;
   mediaType: "IMAGE" | "VIDEO" | "FILE";
+  stage?: AttachmentStage;
   sizeBytes: number;
   publicPath?: string | null;
   createdAt: string;
+};
+
+type AttachmentStage = "BEFORE" | "DURING" | "AFTER" | "REPORT";
+
+type ReportUploadFile = {
+  id: string;
+  file: File;
+  stage: AttachmentStage;
 };
 
 type ReportSubmitResponse = {
@@ -298,6 +307,13 @@ const resultOptions: SelectOption[] = [
   { value: "TEMPORARY_ACTION", label: "임시 조치" },
   { value: "INCOMPLETE", label: "미완료" },
   { value: "REVISIT_REQUIRED", label: "재방문 필요" }
+];
+
+const attachmentStageOptions: { value: AttachmentStage; label: string }[] = [
+  { value: "BEFORE", label: "정비 전" },
+  { value: "DURING", label: "정비 중" },
+  { value: "AFTER", label: "정비 후" },
+  { value: "REPORT", label: "일반 보고" }
 ];
 
 const priorityOptions: SelectOption[] = [
@@ -2767,7 +2783,7 @@ function MechanicActions({ selected, onChanged }: { selected: WorkOrder | null; 
   const [actionTaken, setActionTaken] = useState("");
   const [resultType, setResultType] = useState("COMPLETED");
   const [targetRequestDate, setTargetRequestDate] = useState("");
-  const [reportFiles, setReportFiles] = useState<File[]>([]);
+  const [reportFiles, setReportFiles] = useState<ReportUploadFile[]>([]);
   const [reportMessage, setReportMessage] = useState("");
   const [submittingReport, setSubmittingReport] = useState(false);
   const reportFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -2790,18 +2806,18 @@ function MechanicActions({ selected, onChanged }: { selected: WorkOrder | null; 
         diagnosisResult: diagnosisResult.trim() || "현장 점검 후 원인 확인",
         actionTaken: actionTaken.trim() || "조치 완료 후 시운전 확인"
       });
-      for (const file of reportFiles) {
+      for (const item of reportFiles) {
         const formData = new FormData();
         formData.append("reportId", response.report.id);
-        formData.append("stage", "REPORT");
-        formData.append("file", file);
+        formData.append("stage", item.stage);
+        formData.append("file", item.file);
         await api<WorkReportAttachment>("/api/uploads/work-report", { method: "POST", body: formData });
       }
       setDiagnosisResult("");
       setActionTaken("");
       setReportFiles([]);
       if (reportFileInputRef.current) reportFileInputRef.current.value = "";
-      setReportMessage(reportFiles.length ? `완료보고와 사진 ${reportFiles.length}장이 등록되었습니다.` : "완료보고가 등록되었습니다.");
+      setReportMessage(reportFiles.length ? `완료보고와 사진/영상 ${reportFiles.length}개가 등록되었습니다.` : "완료보고가 등록되었습니다.");
       await onChanged();
     } catch (error) {
       setReportMessage(error instanceof Error ? error.message : "완료보고 등록에 실패했습니다.");
@@ -2834,24 +2850,52 @@ function MechanicActions({ selected, onChanged }: { selected: WorkOrder | null; 
         <textarea value={actionTaken} onChange={(event) => setActionTaken(event.target.value)} placeholder="예: 호스 클램프 교체 및 시운전 완료" />
       </div>
       <div className="field">
-        <label htmlFor="reportPhotos">정비 사진 첨부</label>
+        <label htmlFor="reportPhotos">정비 전/후 사진·영상 첨부</label>
         <div className="file-picker">
           <input
             id="reportPhotos"
             ref={reportFileInputRef}
             type="file"
-            accept="image/*"
+            accept="image/*,video/*"
             multiple
-            onChange={(event) => setReportFiles(Array.from(event.target.files ?? []))}
+            onChange={(event) => {
+              const nextFiles = Array.from(event.target.files ?? []).map((file, index) => ({
+                id: `${file.name}-${file.lastModified}-${index}-${Math.random().toString(36).slice(2, 8)}`,
+                file,
+                stage: "AFTER" as AttachmentStage
+              }));
+              setReportFiles((current) => [...current, ...nextFiles]);
+              event.currentTarget.value = "";
+            }}
           />
-          <small>현장 사진, 교체 부품, 완료 상태 사진을 여러 장 첨부할 수 있습니다.</small>
+          <small>정비 전 상태, 작업 중, 정비 후 결과 사진과 영상을 여러 개 첨부할 수 있습니다. 파일당 50MB 이하로 제한됩니다.</small>
         </div>
         {reportFiles.length ? (
           <div className="attachment-preview-grid">
-            {reportFiles.map((file) => (
-              <div className="attachment-preview" key={`${file.name}-${file.lastModified}`}>
-                <strong>{file.name}</strong>
-                <span>{formatFileSize(file.size)}</span>
+            {reportFiles.map((item) => (
+              <div className="attachment-preview" key={item.id}>
+                <div className="attachment-preview-head">
+                  <strong>{item.file.name}</strong>
+                  <button
+                    type="button"
+                    onClick={() => setReportFiles((current) => current.filter((file) => file.id !== item.id))}
+                  >
+                    삭제
+                  </button>
+                </div>
+                <span>{item.file.type.startsWith("video/") ? "영상" : "사진"} · {formatFileSize(item.file.size)}</span>
+                <select
+                  value={item.stage}
+                  onChange={(event) =>
+                    setReportFiles((current) =>
+                      current.map((file) => file.id === item.id ? { ...file, stage: event.target.value as AttachmentStage } : file)
+                    )
+                  }
+                >
+                  {attachmentStageOptions.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
               </div>
             ))}
           </div>
@@ -2921,17 +2965,22 @@ function ReportAttachments({ attachments }: { attachments: WorkReportAttachment[
   return (
     <div className="report-attachments">
       {attachments.map((attachment) => (
-        <a className="report-attachment" href={attachment.publicPath ?? "#"} key={attachment.id} target="_blank" rel="noreferrer">
+        <div className="report-attachment" key={attachment.id}>
           {attachment.mediaType === "IMAGE" && attachment.publicPath ? (
             <img src={attachment.publicPath} alt={attachment.originalName} />
+          ) : attachment.mediaType === "VIDEO" && attachment.publicPath ? (
+            <video src={attachment.publicPath} controls preload="metadata" />
           ) : (
-            <span className="file-thumb">파일</span>
+            <span className="file-thumb">{attachment.mediaType === "VIDEO" ? "영상" : "파일"}</span>
           )}
           <span>
             <strong>{attachment.originalName}</strong>
-            <small>{formatFileSize(attachment.sizeBytes)}</small>
+            <small>{attachmentStageLabel(attachment.stage)} · {formatFileSize(attachment.sizeBytes)}</small>
           </span>
-        </a>
+          {attachment.publicPath ? (
+            <a className="attachment-open-link" href={attachment.publicPath} target="_blank" rel="noreferrer">원본 열기</a>
+          ) : null}
+        </div>
       ))}
     </div>
   );
@@ -3952,6 +4001,10 @@ function formatFileSize(size: number) {
   if (size < 1024) return `${size}B`;
   if (size < 1024 * 1024) return `${Math.round(size / 1024)}KB`;
   return `${(size / (1024 * 1024)).toFixed(1)}MB`;
+}
+
+function attachmentStageLabel(stage?: AttachmentStage | string | null) {
+  return attachmentStageOptions.find((option) => option.value === stage)?.label ?? "일반 보고";
 }
 
 function isClosed(workOrder: WorkOrder) {

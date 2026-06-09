@@ -931,6 +931,31 @@ a {
   text-decoration: none;
 }
 
+.attachment-preview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.attachment-preview-head button {
+  flex: 0 0 auto;
+  border-radius: 5px;
+  padding: 4px 7px;
+  font-size: 11px;
+}
+
+.attachment-preview select {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  padding: 6px 7px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .attachment-preview strong,
 .report-attachment strong {
   overflow: hidden;
@@ -946,6 +971,7 @@ a {
 }
 
 .report-attachment img,
+.report-attachment video,
 .file-thumb {
   display: block;
   width: 100%;
@@ -953,6 +979,16 @@ a {
   border-radius: 6px;
   background: #e8efec;
   object-fit: cover;
+}
+
+.report-attachment video {
+  background: #111827;
+}
+
+.attachment-open-link {
+  color: var(--green-strong);
+  font-size: 11px;
+  font-weight: 900;
 }
 
 .file-thumb {

@@ -95,6 +95,28 @@ export function submitWorkReport(id: string, input: ReportInput) {
   });
 }
 
+export type ReportAttachmentUploadInput = {
+  uri: string;
+  name: string;
+  mimeType: string;
+  stage: "BEFORE" | "DURING" | "AFTER" | "REPORT";
+};
+
+export function uploadWorkReportAttachment(reportId: string, input: ReportAttachmentUploadInput) {
+  const formData = new FormData();
+  formData.append("reportId", reportId);
+  formData.append("stage", input.stage);
+  (formData as unknown as { append(name: string, value: unknown): void }).append("file", {
+    uri: input.uri,
+    name: input.name,
+    type: input.mimeType
+  });
+  return apiRequest<{ id: string; mediaType: string; originalName: string }>("/api/v1/uploads/work-report", {
+    method: "POST",
+    body: formData
+  });
+}
+
 export function askAi(question: string) {
   return apiRequest<AiResponse>("/api/v1/ai", {
     method: "POST",
