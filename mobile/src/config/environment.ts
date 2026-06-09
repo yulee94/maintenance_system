@@ -19,6 +19,11 @@ type RuntimeExtra = {
     provider?: string;
     url?: string;
   };
+  review?: {
+    privacyPolicyUrl?: string;
+    supportUrl?: string;
+    reviewNotesUrl?: string;
+  };
 };
 
 const extra = (Constants.expoConfig?.extra ?? {}) as RuntimeExtra;
@@ -39,6 +44,7 @@ export function getRuntimeConfig() {
     apiBaseUrl: getApiBaseUrl(),
     crashReporting: extra.crashReporting ?? {},
     analytics: extra.analytics ?? {},
-    remoteConfig: extra.remoteConfig ?? {}
+    remoteConfig: extra.remoteConfig ?? {},
+    review: extra.review ?? {}
   };
 }

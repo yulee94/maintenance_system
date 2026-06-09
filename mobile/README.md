@@ -101,3 +101,9 @@ Git push
 - EAS 또는 Fastlane 자격증명: Apple Developer, App Store Connect, Google Play service account
 
 Fastlane lane은 `mobile/fastlane`에 있으며, EAS 외부에서 빌드 산출물을 TestFlight 또는 Play Console에 직접 업로드해야 할 때 사용합니다.
+
+## 스토어 심사 준비
+
+출시 제출 전에는 [App Store Review Checklist](../docs/APP_STORE_REVIEW_CHECKLIST.md)를 기준으로 심사용 계정, 개인정보 처리방침 URL, 권한 요청 설명, 빈 화면 smoke test, 결제 정책 해당 여부를 확인합니다.
+
+심사 메모 초안은 [mobile/release/APP_REVIEW_NOTES.md](./release/APP_REVIEW_NOTES.md)에 있습니다.

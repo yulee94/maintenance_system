@@ -39,6 +39,9 @@ env:
   FIREBASE_CRASHLYTICS_ENABLED: ${{ vars.FIREBASE_CRASHLYTICS_ENABLED || 'false' }}
   ANALYTICS_PROVIDER: ${{ vars.ANALYTICS_PROVIDER || 'firebase' }}
   REMOTE_CONFIG_PROVIDER: ${{ vars.REMOTE_CONFIG_PROVIDER || 'api' }}
+  APP_PRIVACY_POLICY_URL: ${{ vars.APP_PRIVACY_POLICY_URL || 'https://maintenance.example.co.kr/privacy' }}
+  APP_SUPPORT_URL: ${{ vars.APP_SUPPORT_URL || 'https://maintenance.example.co.kr/support' }}
+  APP_REVIEW_NOTES_URL: ${{ vars.APP_REVIEW_NOTES_URL || 'https://maintenance.example.co.kr/app-review' }}
   SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
   AMPLITUDE_API_KEY: ${{ secrets.AMPLITUDE_API_KEY }}
 

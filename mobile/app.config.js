@@ -43,17 +43,37 @@ module.exports = ({ config } = {}) => {
     scheme: profile.scheme,
     ios: {
       ...baseConfig.ios,
-      bundleIdentifier: profile.iosBundleIdentifier
+      bundleIdentifier: profile.iosBundleIdentifier,
+      infoPlist: {
+        ...(baseConfig.ios?.infoPlist || {}),
+        NSCameraUsageDescription:
+          "정비 완료보고에서 장비 상태, 고장 부위, 교체 부품 사진을 촬영하기 위해 카메라 접근이 필요합니다.",
+        NSPhotoLibraryUsageDescription:
+          "정비 완료보고에 기존 현장 사진 또는 동영상을 첨부하기 위해 사진 보관함 접근이 필요합니다.",
+        NSPhotoLibraryAddUsageDescription:
+          "정비 보고용으로 촬영한 사진을 기기에 저장하도록 허용할 때 사용합니다."
+      }
     },
     android: {
       ...baseConfig.android,
-      package: profile.androidPackage
+      package: profile.androidPackage,
+      blockedPermissions: [
+        ...(baseConfig.android?.blockedPermissions || []),
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.READ_PHONE_STATE",
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     extra: {
       ...(baseConfig.extra || {}),
       appEnv,
       apiBaseUrl: apiUrls[appEnv],
       apiUrls,
+      review: {
+        privacyPolicyUrl: process.env.APP_PRIVACY_POLICY_URL || "https://maintenance.example.co.kr/privacy",
+        supportUrl: process.env.APP_SUPPORT_URL || "https://maintenance.example.co.kr/support",
+        reviewNotesUrl: process.env.APP_REVIEW_NOTES_URL || "https://maintenance.example.co.kr/app-review"
+      },
       crashReporting: {
         provider: process.env.CRASH_REPORTING_PROVIDER || "sentry",
         sentryDsn: process.env.SENTRY_DSN || "",

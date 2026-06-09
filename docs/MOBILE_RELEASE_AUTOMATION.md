@@ -104,6 +104,12 @@ GitHub Secrets:
 - Google Play service account JSON
 - Firebase / APNs 발송 자격증명
 
+앱 심사 관련 URL:
+
+- `APP_PRIVACY_POLICY_URL`: 개인정보 처리방침 공개 URL
+- `APP_SUPPORT_URL`: 앱 지원/문의 URL
+- `APP_REVIEW_NOTES_URL`: 심사자 안내 URL
+
 저장소에 커밋하면 안 되는 항목:
 
 - Apple 인증서, provisioning profile, private key
@@ -123,3 +129,4 @@ GitHub Secrets:
 - Firebase Analytics 또는 Amplitude 이벤트 수집 동의 문구 검토
 - 개인정보 처리방침과 위치/푸시 권한 안내 문구 검토
 - dev/staging/prod API CORS, rate limit, 권한 체크 검증
+- 심사용 계정, OTP/MFA 안내, 권한 요청 사유, 결제 정책 설명을 `APP_STORE_REVIEW_CHECKLIST.md` 기준으로 검토
