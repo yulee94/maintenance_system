@@ -26,6 +26,14 @@ docs/templates/
   26.05.27업무일지.xlsx
 ```
 
+## Bitween/Payroll 연동 방향
+
+향후 Bitween 급여 시스템, Bitween 휴대폰 출퇴근/근태 앱, 그룹웨어/전자결재와 연결할 수 있도록 통합 기준을 문서화했습니다.
+
+- 연동 로드맵: `docs/BITWEEN_INTEGRATION_ROADMAP.md`
+- 공유 타입 계약 초안: `src/types/integration.ts`
+- 원칙: 정비 시스템은 정비 접수/수리 이력/완료 승인/정비 KPI를 담당하고, 급여 계산과 근태 원본은 Bitween 쪽 source of truth로 유지합니다.
+
 ## 빠른 실행
 
 서브 담당자가 DB 없이 화면만 프리뷰할 때는 아래 명령을 사용합니다. `.env`나 PostgreSQL이 없어도 데모 데이터로 제품 서버 모드가 실행됩니다.
