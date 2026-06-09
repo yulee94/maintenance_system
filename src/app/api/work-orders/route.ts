@@ -157,7 +157,7 @@ export async function POST(request: NextRequest) {
           userId: recipient.id,
           workOrderId: row.id,
           type: "PRIORITY_URGENT",
-          title: "Priority #1 긴급 접수",
+          title: "우선순위 #1 긴급 접수",
           body: `${row.requestNo} ${input.customerName} ${input.equipmentInput}`
         }))
       });

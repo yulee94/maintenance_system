@@ -187,7 +187,7 @@ export async function buildExecutiveReportWorkbook() {
   report.addRow(["전체 접수", rows.length, "100%", "데모/운영 전체 정비건"]);
   report.addRow(["최종 완료", completed, `${completionRate}%`, "관리자 승인 기준"]);
   report.addRow(["미결", pending, "", "진행중, 보고 대기, 보류 포함"]);
-  report.addRow(["지연", delayed, "", "Target 초과 또는 지연 상태"]);
+  report.addRow(["지연", delayed, "", "목표일 초과 또는 지연 상태"]);
   report.addRow(["긴급", urgent, "", "P1 미완료"]);
 
   report.addRow([]);
@@ -205,15 +205,15 @@ export async function buildExecutiveReportWorkbook() {
   report.addRow([]);
   report.addRow(["관리 포인트", "", "", ""]);
   report.getCell(`A${report.rowCount}`).font = { bold: true };
-  report.addRow(["1", "", "", "P1 긴급 미완료 건은 당일 target 기준으로 우선 배정/승인합니다."]);
+  report.addRow(["1", "", "", "P1 긴급 미완료 건은 당일 목표일 기준으로 우선 배정/승인합니다."]);
   report.addRow(["2", "", "", "보고 대기 건은 관리자 최종 승인 전까지 KPI 완료로 반영하지 않습니다."]);
-  report.addRow(["3", "", "", "지연 건은 target 변경 요청 사유와 부품/외주 일정을 함께 확인합니다."]);
+  report.addRow(["3", "", "", "지연 건은 목표일 변경 요청 사유와 부품/외주 일정을 함께 확인합니다."]);
 
   finishTable(report);
 
   const mechanicSheet = workbook.addWorksheet("정비사별 KPI");
   addRowsAsTable(mechanicSheet, mechanicKpi);
-  const prioritySheet = workbook.addWorksheet("Priority별 KPI");
+  const prioritySheet = workbook.addWorksheet("우선순위별 KPI");
   addRowsAsTable(prioritySheet, priorityKpi);
   const detailSheet = workbook.addWorksheet("정비건 상세");
   detailSheet.columns = workOrderColumns();
@@ -536,9 +536,9 @@ function workOrderColumns(): Partial<ExcelJS.Column>[] {
     { header: "차대번호", key: "serialNo", width: 22 },
     { header: "불량내용", key: "faultDescription", width: 44 },
     { header: "정비사", key: "mechanic", width: 14 },
-    { header: "Target", key: "target", width: 14 },
+    { header: "목표일", key: "target", width: 14 },
     { header: "완료일", key: "completed", width: 14 },
-    { header: "Priority", key: "priority", width: 12 },
+    { header: "우선순위", key: "priority", width: 12 },
     { header: "상태", key: "status", width: 16 },
     { header: "조치내용", key: "actionTaken", width: 44 },
     { header: "진단결과", key: "diagnosisResult", width: 36 },
@@ -584,10 +584,10 @@ function equipmentHistoryColumns(): Partial<ExcelJS.Column>[] {
     { header: "차대번호", key: "serialNo", width: 24 },
     { header: "접수번호", key: "requestNo", width: 16 },
     { header: "접수일", key: "requestDate", width: 14 },
-    { header: "Priority", key: "priority", width: 12 },
+    { header: "우선순위", key: "priority", width: 12 },
     { header: "상태", key: "status", width: 16 },
     { header: "정비사", key: "mechanic", width: 14 },
-    { header: "Target", key: "target", width: 14 },
+    { header: "목표일", key: "target", width: 14 },
     { header: "완료일", key: "completed", width: 14 },
     { header: "불량내용", key: "faultDescription", width: 44 },
     { header: "조치내용", key: "actionTaken", width: 44 },

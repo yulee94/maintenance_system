@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   BarChart3,
@@ -13,6 +13,7 @@ import {
   FileSpreadsheet,
   Gauge,
   KeyRound,
+  Languages,
   LogOut,
   Monitor,
   Plus,
@@ -27,6 +28,15 @@ import {
   Wrench
 } from "lucide-react";
 import { api, patchJson, postJson } from "@/lib/client-api";
+import {
+  DEFAULT_LOCALE,
+  LOCALE_OPTIONS,
+  LOCALE_STORAGE_KEY,
+  htmlLangFor,
+  normalizeLocale,
+  translate,
+  type LocaleCode
+} from "@/lib/i18n";
 
 type AuthUser = {
   id: string;
@@ -280,18 +290,18 @@ const demoAccounts = [
 ];
 
 const tabs = [
-  { id: "dashboard", label: "현황", icon: Gauge, allow: () => true },
-  { id: "appwork", label: "통합업무", icon: Smartphone, allow: () => true },
-  { id: "daily", label: "일일현황", icon: ClipboardCheck, allow: (user: AuthUser) => hasAnyRole(user, ["SUPER_ADMIN", "ADMIN"]) },
-  { id: "approval", label: "승인", icon: CheckCircle2, allow: (user: AuthUser) => hasAnyRole(user, ["SUPER_ADMIN", "ADMIN", "EXECUTIVE"]) },
-  { id: "reception", label: "접수", icon: Plus, allow: (user: AuthUser) => hasAnyRole(user, ["SUPER_ADMIN", "ADMIN", "RECEPTIONIST"]) },
-  { id: "workorders", label: "정비건", icon: ClipboardList, allow: (user: AuthUser) => hasAnyRole(user, ["SUPER_ADMIN", "ADMIN", "EXECUTIVE", "RECEPTIONIST"]) },
-  { id: "mechanic", label: "내 작업", icon: Wrench, allow: (user: AuthUser) => hasAnyRole(user, ["MECHANIC"]) },
-  { id: "equipment", label: "장비관리", icon: Wrench, allow: (user: AuthUser) => hasAnyRole(user, ["SUPER_ADMIN", "ADMIN", "EXECUTIVE"]) },
-  { id: "calendar", label: "일정", icon: CalendarDays, allow: () => true },
-  { id: "kpi", label: "보고/KPI", icon: BarChart3, allow: (user: AuthUser) => hasAnyRole(user, ["SUPER_ADMIN", "ADMIN", "EXECUTIVE"]) },
-  { id: "admin", label: "관리", icon: UserCog, allow: (user: AuthUser) => hasAnyRole(user, ["SUPER_ADMIN", "ADMIN"]) },
-  { id: "exports", label: "엑셀", icon: FileSpreadsheet, allow: () => true }
+  { id: "dashboard", labelKey: "nav.dashboard", label: "현황", icon: Gauge, allow: () => true },
+  { id: "appwork", labelKey: "nav.appwork", label: "통합업무", icon: Smartphone, allow: () => true },
+  { id: "daily", labelKey: "nav.daily", label: "일일현황", icon: ClipboardCheck, allow: (user: AuthUser) => hasAnyRole(user, ["SUPER_ADMIN", "ADMIN"]) },
+  { id: "approval", labelKey: "nav.approval", label: "승인", icon: CheckCircle2, allow: (user: AuthUser) => hasAnyRole(user, ["SUPER_ADMIN", "ADMIN", "EXECUTIVE"]) },
+  { id: "reception", labelKey: "nav.reception", label: "접수", icon: Plus, allow: (user: AuthUser) => hasAnyRole(user, ["SUPER_ADMIN", "ADMIN", "RECEPTIONIST"]) },
+  { id: "workorders", labelKey: "nav.workorders", label: "정비건", icon: ClipboardList, allow: (user: AuthUser) => hasAnyRole(user, ["SUPER_ADMIN", "ADMIN", "EXECUTIVE", "RECEPTIONIST"]) },
+  { id: "mechanic", labelKey: "nav.mechanic", label: "내 작업", icon: Wrench, allow: (user: AuthUser) => hasAnyRole(user, ["MECHANIC"]) },
+  { id: "equipment", labelKey: "nav.equipment", label: "장비관리", icon: Wrench, allow: (user: AuthUser) => hasAnyRole(user, ["SUPER_ADMIN", "ADMIN", "EXECUTIVE"]) },
+  { id: "calendar", labelKey: "nav.calendar", label: "일정", icon: CalendarDays, allow: () => true },
+  { id: "kpi", labelKey: "nav.kpi", label: "보고/KPI", icon: BarChart3, allow: (user: AuthUser) => hasAnyRole(user, ["SUPER_ADMIN", "ADMIN", "EXECUTIVE"]) },
+  { id: "admin", labelKey: "nav.admin", label: "관리", icon: UserCog, allow: (user: AuthUser) => hasAnyRole(user, ["SUPER_ADMIN", "ADMIN"]) },
+  { id: "exports", labelKey: "nav.exports", label: "엑셀", icon: FileSpreadsheet, allow: () => true }
 ] as const;
 
 type TabId = (typeof tabs)[number]["id"];
@@ -325,7 +335,45 @@ type MobileAiResult = {
   }[];
 };
 
+type I18nContextValue = {
+  locale: LocaleCode;
+  setLocale: (locale: LocaleCode) => void;
+  t: (key: string, fallback?: string, params?: Record<string, string | number>) => string;
+};
+
+const I18nContext = createContext<I18nContextValue>({
+  locale: DEFAULT_LOCALE,
+  setLocale: () => undefined,
+  t: (key, fallback, params) => translate(DEFAULT_LOCALE, key, fallback, params)
+});
+
+function useI18n() {
+  return useContext(I18nContext);
+}
+
+function LanguageSwitch({ compact = false }: { compact?: boolean }) {
+  const { locale, setLocale, t } = useI18n();
+  return (
+    <label className={`language-switch ${compact ? "compact" : ""}`}>
+      <Languages size={15} aria-hidden="true" />
+      <span>{t("i18n.language", "언어")}</span>
+      <select
+        aria-label={t("i18n.select", "표시 언어 선택")}
+        value={locale}
+        onChange={(event) => setLocale(normalizeLocale(event.target.value))}
+      >
+        {LOCALE_OPTIONS.map((option) => (
+          <option key={option.code} value={option.code}>
+            {option.nativeName}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 export function AppShell() {
+  const [locale, setLocaleState] = useState<LocaleCode>(DEFAULT_LOCALE);
   const [user, setUser] = useState<AuthUser | null>(null);
   const [tab, setTab] = useState<TabId>("dashboard");
   const [summary, setSummary] = useState<Summary | null>(null);
@@ -339,6 +387,21 @@ export function AppShell() {
   const selected = useMemo(
     () => workOrders.find((workOrder) => workOrder.id === selectedId) ?? workOrders[0] ?? null,
     [selectedId, workOrders]
+  );
+  const setLocale = (nextLocale: LocaleCode) => {
+    const normalized = normalizeLocale(nextLocale);
+    setLocaleState(normalized);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(LOCALE_STORAGE_KEY, normalized);
+    }
+  };
+  const i18n = useMemo<I18nContextValue>(
+    () => ({
+      locale,
+      setLocale,
+      t: (key, fallback, params) => translate(locale, key, fallback, params)
+    }),
+    [locale]
   );
 
   async function refresh() {
@@ -366,6 +429,15 @@ export function AppShell() {
   }
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    setLocaleState(normalizeLocale(window.localStorage.getItem(LOCALE_STORAGE_KEY)));
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.lang = htmlLangFor(locale);
+  }, [locale]);
+
+  useEffect(() => {
     api<{ user: AuthUser | null }>("/api/auth/me")
       .then((data) => setUser(data.user))
       .finally(() => setLoading(false));
@@ -382,41 +454,48 @@ export function AppShell() {
   }, [tab, user, visibleTabs]);
 
   if (!user) {
-    return <LoginScreen onLogin={setUser} loading={loading} />;
+    return (
+      <I18nContext.Provider value={i18n}>
+        <LoginScreen onLogin={setUser} loading={loading} />
+      </I18nContext.Provider>
+    );
   }
 
   const canAdmin = hasAnyRole(user, ["SUPER_ADMIN", "ADMIN"]);
   const canKpi = hasAnyRole(user, ["SUPER_ADMIN", "ADMIN", "EXECUTIVE"]);
+  const { t } = i18n;
 
   return (
+    <I18nContext.Provider value={i18n}>
     <div className="app">
       <header className="topbar">
         <div className="topbar-inner">
           <div className="brand">
             <div className="brand-mark">MS</div>
             <div>
-              <h1>정비 렌탈 운영 시스템</h1>
+              <h1>{t("app.title", "정비 렌탈 운영 시스템")}</h1>
               <p>{user.name} · {formatRoles(user.roles)}</p>
             </div>
           </div>
-          <nav className="tabs" aria-label="업무 메뉴">
+          <nav className="tabs" aria-label={t("nav.aria", "업무 메뉴")}>
             {visibleTabs.map((item) => {
               const Icon = item.icon;
               return (
                 <button key={item.id} className={tab === item.id ? "active" : ""} onClick={() => setTab(item.id)} type="button">
                   <Icon size={17} />
-                  {item.label}
+                  {t(item.labelKey, item.label)}
                 </button>
               );
             })}
           </nav>
           <div className="user-box">
-            <button className="icon-button" title="새로고침" onClick={refresh} disabled={loading} type="button">
+            <LanguageSwitch compact />
+            <button className="icon-button" title={t("actions.refresh", "새로고침")} onClick={refresh} disabled={loading} type="button">
               <RefreshCcw size={16} />
             </button>
             <button
               className="icon-button"
-              title="로그아웃"
+              title={t("actions.logout", "로그아웃")}
               type="button"
               onClick={async () => {
                 await postJson("/api/auth/logout", {});
@@ -431,7 +510,7 @@ export function AppShell() {
       </header>
 
       <div className="app-workspace">
-        <main className="main desktop-workspace" aria-label="PC 업무 화면">
+        <main className="main desktop-workspace" aria-label={t("layout.desktopAria", "데스크톱 업무 화면")}>
           {message ? <p className="notice">{message}</p> : null}
           {tab === "dashboard" ? <Dashboard summary={summary} workOrders={workOrders} user={user} select={setSelectedId} switchTab={setTab} /> : null}
           {tab === "appwork" ? (
@@ -478,6 +557,7 @@ export function AppShell() {
         />
       </div>
     </div>
+    </I18nContext.Provider>
   );
 }
 
@@ -585,9 +665,9 @@ function MobileAppPreview({
       <div className="preview-panel-title">
         <div>
           <h2>휴대폰 앱 프리뷰</h2>
-          <p>PC 브라우저 옆에서 역할별 모바일 화면을 바로 확인합니다.</p>
+          <p>데스크톱 브라우저 옆에서 역할별 모바일 화면을 바로 확인합니다.</p>
         </div>
-        <span className="chip blue"><Smartphone size={14} />Mobile</span>
+        <span className="chip blue"><Smartphone size={14} />모바일</span>
       </div>
       <div className="preview-mode-tabs" role="tablist" aria-label="모바일 역할 선택">
         {availableModes.map((item) => (
@@ -616,7 +696,7 @@ function MobileAppPreview({
               <span>{mode === "mechanic" ? "정비사 앱" : mode === "admin" ? "관리자 앱" : "임원 앱"}</span>
               <strong>{mode === "mechanic" ? user.name : mode === "admin" ? "운영 관제" : "경영 보고"}</strong>
             </div>
-            <button type="button" title="PC 화면 연결" onClick={() => visibleRows[0] && onOpenWorkOrder(visibleRows[0].id)}>
+            <button type="button" title="데스크톱 화면 연결" onClick={() => visibleRows[0] && onOpenWorkOrder(visibleRows[0].id)}>
               <Monitor size={16} />
             </button>
           </header>
@@ -768,12 +848,12 @@ function UnifiedWorkAppPanel({
     <div className="section unified-work-panel">
       <div className="section-header">
         <div>
-          <h2>PC 통합업무</h2>
-          <p>휴대폰 앱의 오늘, 정비건, 완료건, AI 기능을 PC에서도 같은 기준으로 사용합니다.</p>
+          <h2>데스크톱 통합업무</h2>
+          <p>휴대폰 앱의 오늘, 정비건, 완료건, AI 기능을 데스크톱에서도 같은 기준으로 사용합니다.</p>
         </div>
-        <span className="chip blue"><Monitor size={14} />PC 적용</span>
+        <span className="chip blue"><Monitor size={14} />데스크톱 적용</span>
       </div>
-      <div className="app-tab-strip" role="tablist" aria-label="PC 통합업무 화면 전환">
+      <div className="app-tab-strip" role="tablist" aria-label="데스크톱 통합업무 화면 전환">
         <button className={screen === "today" && !metricFilter ? "active" : ""} type="button" onClick={() => { setScreen("today"); setMetricFilter(null); }}>
           <CalendarDays size={16} />오늘
         </button>
@@ -827,7 +907,7 @@ function UnifiedWorkAppPanel({
             <div className="section-header">
               <div>
                 <h2>{screenTitle}</h2>
-                <p>휴대폰 앱과 같은 기준으로 필터링된 정비건입니다. 항목을 선택하면 PC 상세 화면에서 변경/승인/보고를 이어서 처리합니다.</p>
+                <p>휴대폰 앱과 같은 기준으로 필터링된 정비건입니다. 항목을 선택하면 데스크톱 상세 화면에서 변경/승인/보고를 이어서 처리합니다.</p>
               </div>
               <span className="chip green">{sortedRows.length}건</span>
             </div>
@@ -925,7 +1005,7 @@ function DesktopAiPanel({
             </>
           ) : (
             <div className="mobile-report-card">
-              <span>PC 적용 완료</span>
+              <span>데스크톱 적용 완료</span>
               <strong>모바일 AI 탭과 같은 API와 권한 정책을 사용합니다.</strong>
               <p>정비사는 KPI 요청이 차단되고, 관리자/임원/최고관리자만 운영 보고와 KPI 자료를 요청할 수 있습니다.</p>
             </div>
@@ -1173,6 +1253,7 @@ function MobileWorkRow({ row, onOpen }: { row: WorkOrder; onOpen: (id: string) =
 }
 
 function LoginScreen({ onLogin, loading }: { onLogin: (user: AuthUser) => void; loading: boolean }) {
+  const { t } = useI18n();
   const [loginId, setLoginId] = useState("ko.ms");
   const [password, setPassword] = useState("Admin!2026Test");
   const [error, setError] = useState("");
@@ -1191,21 +1272,25 @@ function LoginScreen({ onLogin, loading }: { onLogin: (user: AuthUser) => void; 
     <div className="login-screen">
       <div className="login-layout">
         <form className="login-panel" onSubmit={submit}>
-          <h1>정비 렌탈 운영 시스템</h1>
-          <p>역할별 데모 계정으로 실제 운영 화면을 확인할 수 있습니다.</p>
+          <div className="login-tools">
+            <span className="brand-mark">MS</span>
+            <LanguageSwitch />
+          </div>
+          <h1>{t("app.title", "정비 렌탈 운영 시스템")}</h1>
+          <p>{t("login.subtitle", "역할별 데모 계정으로 실제 운영 화면을 확인할 수 있습니다.")}</p>
           <div className="form-grid">
             <div className="field">
-              <label htmlFor="loginId">아이디</label>
+              <label htmlFor="loginId">{t("login.loginId", "아이디")}</label>
               <input id="loginId" value={loginId} onChange={(event) => setLoginId(event.target.value)} />
             </div>
             <div className="field">
-              <label htmlFor="password">비밀번호</label>
+              <label htmlFor="password">{t("login.password", "비밀번호")}</label>
               <input id="password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
             </div>
             {error ? <div className="error">{error}</div> : null}
             <button className="primary" disabled={loading} type="submit">
               <KeyRound size={16} />
-              로그인
+              {loading ? t("login.loading", "확인 중") : t("login.submit", "로그인")}
             </button>
           </div>
         </form>
@@ -1213,8 +1298,8 @@ function LoginScreen({ onLogin, loading }: { onLogin: (user: AuthUser) => void; 
         <div className="demo-panel">
           <div className="section-header">
             <div>
-              <h2>데모 계정</h2>
-              <p>임원, 관리자, 정비사 화면을 즉시 전환해 볼 수 있습니다.</p>
+              <h2>{t("login.demoAccounts", "데모 계정")}</h2>
+              <p>{t("login.demoSubtitle", "임원, 관리자, 정비사 화면을 즉시 전환해 볼 수 있습니다.")}</p>
             </div>
           </div>
           <div className="demo-account-grid">
@@ -1321,7 +1406,7 @@ function Dashboard({
       </div>
       <div className="insight-grid">
         <Insight title="긴급 처리" value={`${urgent.length}건`} text={urgent[0] ? `${urgent[0].customer?.name} · ${urgent[0].faultDescription}` : "긴급 미결 건 없음"} tone="red" />
-        <Insight title="지연 리스크" value={`${delayed.length}건`} text={delayed[0] ? `${delayed[0].requestNo} target 초과` : "지연 관리 안정"} tone="amber" />
+        <Insight title="지연 리스크" value={`${delayed.length}건`} text={delayed[0] ? `${delayed[0].requestNo} 목표일 초과` : "지연 관리 안정"} tone="amber" />
         <Insight title="승인 대기" value={`${reviewWaiting.length}건`} text="정비사 보고 후 관리자 최종 승인 필요" tone="green" />
         {hasAnyRole(user, ["MECHANIC"]) ? <Insight title="내 배정 업무" value={`${myWork.length}건`} text="작업 시작과 완료보고는 내 작업 탭에서 처리" tone="blue" /> : null}
       </div>
@@ -1336,7 +1421,7 @@ function Dashboard({
           <h2>시연 포인트</h2>
           <div className="kv"><span>임원</span><strong>전체 완료율, 긴급/지연, 정비사별 KPI를 보고합니다.</strong></div>
           <div className="kv"><span>관리자</span><strong>미배정 건 배정, 보고 승인, 계정 생성과 권한 부여를 처리합니다.</strong></div>
-          <div className="kv"><span>정비사</span><strong>내 업무만 확인하고 작업 시작, 완료보고, target 변경 요청을 보냅니다.</strong></div>
+          <div className="kv"><span>정비사</span><strong>내 업무만 확인하고 작업 시작, 완료보고, 목표일 변경 요청을 보냅니다.</strong></div>
         </div>
       </div>
     </div>
@@ -1390,7 +1475,7 @@ function DailyStatusPanel({
       <div className="section-header">
         <div>
           <h2>관리자 일일업무 현황</h2>
-          <p>선택한 날짜 기준으로 접수, 진행, target, 보고, 완료 건을 한 번에 리스트업합니다.</p>
+          <p>선택한 날짜 기준으로 접수, 진행, 목표일, 보고, 완료 건을 한 번에 리스트업합니다.</p>
         </div>
         <div className="toolbar">
           <a className="icon-button" href="/api/exports/daily-status" download><Download size={16} />일일현황 엑셀</a>
@@ -1400,7 +1485,7 @@ function DailyStatusPanel({
       <div className="daily-command-bar">
         <Input label="기준일" type="date" value={selectedDate} onChange={setSelectedDate} />
         <Select label="정비사" value={mechanicFilter} onChange={setMechanicFilter} options={mechanicOptions} />
-        <Select label="Priority" value={priorityFilter} onChange={setPriorityFilter} options={[{ value: "ALL", label: "전체 Priority" }, ...priorityOptions]} />
+        <Select label="우선순위" value={priorityFilter} onChange={setPriorityFilter} options={[{ value: "ALL", label: "전체 우선순위" }, ...priorityOptions]} />
         <Select
           label="상태"
           value={statusFilter}
@@ -1420,8 +1505,8 @@ function DailyStatusPanel({
           value={sortBy}
           onChange={setSortBy}
           options={[
-            { value: "priority", label: "Priority 높은 순" },
-            { value: "target", label: "Target 빠른 순" },
+            { value: "priority", label: "우선순위 높은 순" },
+            { value: "target", label: "목표일 빠른 순" },
             { value: "mechanic", label: "정비사별" },
             { value: "status", label: "상태별" },
             { value: "requestDate", label: "접수 최신 순" }
@@ -1495,7 +1580,7 @@ function DailyStatusPanel({
                     <div>
                       <span>담당/일정</span>
                       <strong>{row.assignedMechanic?.name ?? "미배정"}</strong>
-                      <p>접수 {formatDate(row.requestDate)} · Target {formatDate(row.targetDueDate)}</p>
+                      <p>접수 {formatDate(row.requestDate)} · 목표일 {formatDate(row.targetDueDate)}</p>
                       <p className={isRiskWorkOrder(row, selectedDate) ? "danger-text" : "muted"}>{targetStatusText(row, selectedDate)}</p>
                     </div>
                   </div>
@@ -1516,7 +1601,7 @@ function DailyStatusPanel({
           <div className="tool-panel">
             <h2>관리자 확인 포인트</h2>
             <div className="kv"><span>1순위</span><strong>{approvalRows.length ? `완료보고 ${approvalRows.length}건 최종 승인 필요` : "승인 대기 건 없음"}</strong></div>
-            <div className="kv"><span>2순위</span><strong>{delayedRows.length ? `지연/리스크 ${delayedRows.length}건 target 재확인` : "지연 리스크 안정"}</strong></div>
+            <div className="kv"><span>2순위</span><strong>{delayedRows.length ? `지연/리스크 ${delayedRows.length}건 목표일 재확인` : "지연 리스크 안정"}</strong></div>
             <div className="kv"><span>3순위</span><strong>{unassignedRows.length ? `미배정 ${unassignedRows.length}건 정비사 배정 필요` : "미배정 건 없음"}</strong></div>
           </div>
           <div className="tool-panel">
@@ -1611,7 +1696,7 @@ function ReceptionPanel({ onCreated }: { onCreated: () => Promise<void> }) {
         </div>
         <div className="form-row">
           <Input label="고장 유형" value={form.faultCategoryName} onChange={(value) => setField("faultCategoryName", value)} />
-          <Select label="Priority" value={form.priorityLevel} onChange={(value) => setField("priorityLevel", value)} options={priorityOptions} />
+          <Select label="우선순위" value={form.priorityLevel} onChange={(value) => setField("priorityLevel", value)} options={priorityOptions} />
         </div>
         <div className="field">
           <label>고장 내용</label>
@@ -1778,7 +1863,7 @@ function ApprovalWorkflowCard({
           <div className="chips">
             <span className={`chip ${priorityChip[row.priorityLevel]}`}>{priorityLabel[row.priorityLevel]}</span>
             <span className="chip">{labelStatus(row.status)}</span>
-            <span className="chip">Target {formatDate(row.targetDueDate)}</span>
+            <span className="chip">목표일 {formatDate(row.targetDueDate)}</span>
           </div>
         </div>
         <ApprovalLineView steps={line} />
@@ -1890,13 +1975,13 @@ function WorkOrdersPanel({
         <div className="section-header">
           <div>
             <h2>정비건 목록</h2>
-            <p>인원, Priority, 상태 기준으로 필터링하고 target 또는 접수일 기준으로 정렬합니다.</p>
+            <p>인원, 우선순위, 상태 기준으로 필터링하고 목표일 또는 접수일 기준으로 정렬합니다.</p>
           </div>
           <span className="chip">{filtered.length}건</span>
         </div>
         <div className="filter-panel">
           <Select label="정비사" value={mechanicFilter} onChange={setMechanicFilter} options={mechanicOptions} />
-          <Select label="Priority" value={priorityFilter} onChange={setPriorityFilter} options={[{ value: "ALL", label: "전체 Priority" }, ...priorityOptions]} />
+          <Select label="우선순위" value={priorityFilter} onChange={setPriorityFilter} options={[{ value: "ALL", label: "전체 우선순위" }, ...priorityOptions]} />
           <Select
             label="상태"
             value={statusFilter}
@@ -1918,8 +2003,8 @@ function WorkOrdersPanel({
             value={sortBy}
             onChange={setSortBy}
             options={[
-              { value: "priority", label: "Priority 높은 순" },
-              { value: "target", label: "Target 빠른 순" },
+              { value: "priority", label: "우선순위 높은 순" },
+              { value: "target", label: "목표일 빠른 순" },
               { value: "requestDate", label: "접수 최신 순" },
               { value: "mechanic", label: "정비사별" },
               { value: "status", label: "상태별" }
@@ -1956,7 +2041,7 @@ function MechanicPanel({
         <div className="section-header">
           <div>
             <h2>내 배정 업무</h2>
-            <p>작업 시작, 완료보고, target 변경 요청을 처리합니다.</p>
+            <p>작업 시작, 완료보고, 목표일 변경 요청을 처리합니다.</p>
           </div>
           <span className="chip green">완료 {completed.length}건</span>
         </div>
@@ -1995,7 +2080,7 @@ function WorkList({
           </div>
           <div className="chips">
             <span className="chip">{labelStatus(item.status)}</span>
-            <span className="chip">Target {formatDate(item.targetDueDate)}</span>
+            <span className="chip">목표일 {formatDate(item.targetDueDate)}</span>
             <span className="chip">{item.assignedMechanic?.name ?? "미배정"}</span>
           </div>
         </button>
@@ -2038,7 +2123,7 @@ function WorkDetail({
       <div className="detail-grid">
         <Info label="상태" value={labelStatus(selected.status)} />
         <Info label="담당 정비사" value={selected.assignedMechanic?.name} />
-        <Info label="Target" value={formatDate(selected.targetDueDate)} />
+        <Info label="목표일" value={formatDate(selected.targetDueDate)} />
         <Info label="연락처" value={selected.contactPhone} />
         <Info label="모델" value={selected.equipment?.modelName} />
         <Info label="차대번호" value={selected.equipment?.serialNo} />
@@ -2077,7 +2162,7 @@ function WorkDetail({
           <h3>관리자 처리</h3>
           <div className="form-row">
             <Select label="담당자" value={mechanicId} onChange={setMechanicId} options={mechanicOptions} />
-            <Input label="Target" type="date" value={targetDate} onChange={setTargetDate} />
+            <Input label="목표일" type="date" value={targetDate} onChange={setTargetDate} />
           </div>
           <div className="toolbar">
             <button
@@ -2096,7 +2181,7 @@ function WorkDetail({
                 await onChanged();
               }}
             >
-              <CalendarDays size={16} />Target
+              <CalendarDays size={16} />목표일
             </button>
             <button
               className="danger"
@@ -2114,7 +2199,7 @@ function WorkDetail({
           </div>
         </div>
       ) : (
-        <div className="notice">배정과 Target 변경은 관리자만 처리합니다. 결재 단계가 도착하면 위 승인 버튼이 활성화됩니다.</div>
+        <div className="notice">배정과 목표일 변경은 관리자만 처리합니다. 결재 단계가 도착하면 위 승인 버튼이 활성화됩니다.</div>
       )}
       <Timeline selected={selected} />
     </div>
@@ -2168,7 +2253,7 @@ function MechanicActions({ selected, onChanged }: { selected: WorkOrder | null; 
         <CheckCircle2 size={16} />완료보고 제출
       </button>
       <div className="form-row">
-        <Input label="Target 변경 요청" type="date" value={targetRequestDate} onChange={setTargetRequestDate} />
+        <Input label="목표일 변경 요청" type="date" value={targetRequestDate} onChange={setTargetRequestDate} />
         <div className="field">
           <label>요청</label>
           <button
@@ -2244,7 +2329,7 @@ function CalendarPanel() {
       <div className="section-header">
         <div>
           <h2>월간 진행 일정</h2>
-          <p>접수일자부터 target일자까지 진행 막대로 표시하고, 날짜를 선택하면 해당 일자의 진행 내용을 확인합니다.</p>
+          <p>접수일자부터 목표일까지 진행 막대로 표시하고, 날짜를 선택하면 해당 일자의 진행 내용을 확인합니다.</p>
         </div>
         <div className="toolbar">
           <button type="button" onClick={() => setMonth(addMonths(month, -1))}>이전 달</button>
@@ -2306,7 +2391,7 @@ function CalendarPanel() {
         <div className="section-header">
           <div>
             <h2>{selectedDate} 진행 내용</h2>
-            <p>선택한 날짜에 접수일과 target 범위가 걸쳐 있는 정비건입니다.</p>
+            <p>선택한 날짜에 접수일과 목표일 범위가 걸쳐 있는 정비건입니다.</p>
           </div>
           <span className="chip">{selectedRows.length}건</span>
         </div>
@@ -2392,9 +2477,9 @@ function EquipmentPanel({ canManage, onOpenWorkOrder }: { canManage: boolean; on
     try {
       await postJson("/api/equipment/import-master-list", {});
       await loadAssets();
-      setMessage("Master List 기준 장비 목록을 갱신했습니다.");
+      setMessage("마스터 목록 기준 장비 목록을 갱신했습니다.");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Master List import에 실패했습니다.");
+      setMessage(error instanceof Error ? error.message : "마스터 목록 가져오기에 실패했습니다.");
     }
   }
 
@@ -2419,16 +2504,16 @@ function EquipmentPanel({ canManage, onOpenWorkOrder }: { canManage: boolean; on
       <div className="section-header">
         <div>
           <h2>전체 장비/지게차 자산관리</h2>
-          <p>Master List 장비와 누적 정비 데이터를 연결해 잦은 고장, 교체/폐각 검토 대상을 확인합니다.</p>
+          <p>마스터 목록 장비와 누적 정비 데이터를 연결해 잦은 고장, 교체/폐각 검토 대상을 확인합니다.</p>
         </div>
         <div className="toolbar">
-          {canManage ? <button type="button" onClick={importMasterList}><Upload size={16} />Master List 갱신</button> : null}
+          {canManage ? <button type="button" onClick={importMasterList}><Upload size={16} />마스터 목록 갱신</button> : null}
           <a className="icon-button" href="/api/exports/equipment-history" download><Download size={16} />장비 이력 엑셀</a>
         </div>
       </div>
       {message ? <p className="notice">{message}</p> : null}
       <div className="equipment-summary-grid">
-        <Insight title="전체 장비" value={`${assets.length}대`} text="Master List 기준 전체 자산" tone="blue" />
+        <Insight title="전체 장비" value={`${assets.length}대`} text="마스터 목록 기준 전체 자산" tone="blue" />
         <Insight title="교체/폐각 검토" value={`${criticalCount}대`} text="반복 고장, 긴급/지연 누적 장비" tone="red" />
         <Insight title="정밀점검 대상" value={`${watchCount}대`} text="예방정비 강화 필요 장비" tone="amber" />
         <Insight title="미결 정비" value={`${openCount}건`} text={`누적 정비 이력 ${totalWorkOrders}건`} tone="green" />
@@ -2565,7 +2650,7 @@ function KpiPanel({ enabled, workOrders }: { enabled: boolean; workOrders: WorkO
       <div className="section-header">
         <div>
           <h2>임원 보고/KPI</h2>
-          <p>정비사별 처리량, Priority별 완료율, 특이사항과 진행 리스크를 한 페이지에서 확인합니다.</p>
+          <p>정비사별 처리량, 우선순위별 완료율, 특이사항과 진행 리스크를 한 페이지에서 확인합니다.</p>
         </div>
         <div className="toolbar">
           <a className="icon-button" href="/api/admin/kpi/report"><Download size={16} />원페이지 보고 엑셀</a>
@@ -2575,7 +2660,7 @@ function KpiPanel({ enabled, workOrders }: { enabled: boolean; workOrders: WorkO
       <div className="insight-grid">
         <Insight title="접수" value={`${totalReceived}건`} text="데모 기간 전체 접수" tone="blue" />
         <Insight title="완료" value={`${totalCompleted}건`} text="관리자 최종 승인 기준" tone="green" />
-        <Insight title="지연" value={`${totalDelayed}건`} text="Target 초과 또는 지연 상태" tone="amber" />
+        <Insight title="지연" value={`${totalDelayed}건`} text="목표일 초과 또는 지연 상태" tone="amber" />
         <Insight title="승인 대기" value={`${reportWaiting.length}건`} text="정비사 보고 후 관리자 검토 필요" tone="red" />
       </div>
       <div className="report-page">
@@ -2593,9 +2678,9 @@ function KpiPanel({ enabled, workOrders }: { enabled: boolean; workOrders: WorkO
         <div className="report-grid">
           <div className="tool-panel">
             <h3>관리 포인트</h3>
-            <div className="kv"><span>긴급</span><strong>P1 미완료 건은 당일 target 기준으로 우선 처리합니다.</strong></div>
+            <div className="kv"><span>긴급</span><strong>P1 미완료 건은 당일 목표일 기준으로 우선 처리합니다.</strong></div>
             <div className="kv"><span>승인</span><strong>보고 대기 건은 관리자 승인 전까지 KPI 완료로 반영하지 않습니다.</strong></div>
-            <div className="kv"><span>지연</span><strong>target 초과 건은 부품/외주/현장 사유를 함께 확인합니다.</strong></div>
+            <div className="kv"><span>지연</span><strong>목표일 초과 건은 부품/외주/현장 사유를 함께 확인합니다.</strong></div>
           </div>
           <div className="tool-panel">
             <h3>주요 특이사항</h3>
@@ -2610,7 +2695,7 @@ function KpiPanel({ enabled, workOrders }: { enabled: boolean; workOrders: WorkO
         </div>
       </div>
       <SimpleTable rows={mechanics} title="정비사별 KPI" />
-      <SimpleTable rows={priorities} title="Priority별 KPI" />
+      <SimpleTable rows={priorities} title="우선순위별 KPI" />
     </div>
   );
 }
@@ -2646,7 +2731,7 @@ function AdminPanel({
 
   async function importMasterList() {
     await postJson("/api/equipment/import-master-list", {});
-    setMessage("Master List 데모 import가 완료되었습니다.");
+    setMessage("마스터 목록 데모 가져오기가 완료되었습니다.");
     await onChanged();
   }
 
@@ -2696,10 +2781,10 @@ function AdminPanel({
       <div className="section-header">
         <div>
           <h2>관리자 설정</h2>
-          <p>고민서 책임 계정으로 사용자 생성, 권한 부여, Master List import, 감사로그를 확인합니다.</p>
+          <p>고민서 책임 계정으로 사용자 생성, 권한 부여, 마스터 목록 가져오기, 감사로그를 확인합니다.</p>
         </div>
         <div className="toolbar">
-          <button onClick={importMasterList} type="button"><Upload size={16} />Master List import</button>
+          <button onClick={importMasterList} type="button"><Upload size={16} />마스터 목록 가져오기</button>
           <button onClick={loadLogs} type="button"><Shield size={16} />감사로그</button>
         </div>
       </div>
@@ -3155,7 +3240,7 @@ function dailyStatusReason(row: WorkOrder, key: string) {
   if (isSameDayKey(key, row.finalCompletedAt)) return "금일 완료";
   if (isSameDayKey(key, row.mechanicReportedAt)) return "금일 보고";
   if (isSameDayKey(key, row.requestDate)) return "금일 접수";
-  if (isSameDayKey(key, row.targetDueDate)) return "금일 Target";
+  if (isSameDayKey(key, row.targetDueDate)) return "금일 목표일";
   if (isDateWithinSchedule(key, row)) return "진행 범위";
   return "참조";
 }
@@ -3181,7 +3266,7 @@ function calendarScheduleTitle(row: WorkOrder, key: string) {
 function dailyActionText(row: WorkOrder, key: string) {
   if (!row.assignedMechanic?.id && !isClosed(row)) return "정비사 배정 필요";
   if (row.status === "REPORT_SUBMITTED") return "완료보고 검토 후 승인";
-  if (isRiskWorkOrder(row, key)) return "지연 사유와 target 재조정 확인";
+  if (isRiskWorkOrder(row, key)) return "지연 사유와 목표일 재조정 확인";
   if (row.status === "PART_WAITING") return "부품 입고 일정 확인";
   if (row.status === "ON_HOLD" || row.priorityLevel === "OUTSOURCE") return "외주/보류 일정 확인";
   if (row.status === "IN_PROGRESS") return "작업 진행 상태 확인";
@@ -3192,8 +3277,8 @@ function dailyActionText(row: WorkOrder, key: string) {
 function targetStatusText(row: WorkOrder, key: string) {
   if (isClosed(row)) return `완료 ${formatDate(row.finalCompletedAt ?? row.mechanicReportedAt)}`;
   const target = toDateKey(row.targetDueDate ?? "");
-  if (!target) return "Target 미지정";
-  if (target < key) return "Target 초과";
+  if (!target) return "목표일 미지정";
+  if (target < key) return "목표일 초과";
   if (target === key) return "오늘 마감";
   return `D-${daysBetween(key, target)}`;
 }

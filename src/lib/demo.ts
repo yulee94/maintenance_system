@@ -345,7 +345,7 @@ function statusFromTemplate(row: DailyStatusTemplateRow, priorityLevel: Priority
 }
 
 function templateSourceMemo(row: DailyStatusTemplateRow) {
-  return `${row.section === "pending" ? "미결 목록" : "일일 진행업무"} · 구분 ${row.category} · Template row ${row.sourceRow}`;
+  return `${row.section === "pending" ? "미결 목록" : "일일 진행업무"} · 구분 ${row.category} · 템플릿 행 ${row.sourceRow}`;
 }
 
 async function makeStore(): Promise<DemoStore> {
@@ -797,7 +797,7 @@ export async function demoUpdateTarget(id: string, targetDueDate: string, reason
     id: `demo-target-history-${Date.now()}`,
     oldDate,
     newDate: row.targetDueDate,
-    reason: reason ?? "관리자 target 지정",
+    reason: reason ?? "관리자 목표일 지정",
     status: "APPROVED",
     createdAt: new Date().toISOString()
   });

@@ -23,7 +23,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     const before = await prisma.workOrder.findUnique({ where: { id } });
     if (!before) throw new ApiError(404, "정비건을 찾을 수 없습니다.");
     const newDate = parseDateInput(input.targetDueDate);
-    if (!newDate) throw new ApiError(422, "target 날짜가 올바르지 않습니다.");
+    if (!newDate) throw new ApiError(422, "목표일 날짜가 올바르지 않습니다.");
     const row = await prisma.workOrder.update({
       where: { id },
       data: {
@@ -33,7 +33,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
           create: {
             oldDate: before.targetDueDate,
             newDate,
-            reason: input.reason ?? "관리자 target 지정",
+            reason: input.reason ?? "관리자 목표일 지정",
             changedById: user.id
           }
         }
