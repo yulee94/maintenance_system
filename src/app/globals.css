@@ -937,13 +937,113 @@ a {
 }
 
 .metric-button {
-  display: block;
-  min-height: 92px;
+  --metric-color: var(--green);
+  --metric-bg: rgba(31, 111, 95, 0.08);
+  --metric-ring: rgba(31, 111, 95, 0.18);
+  --metric-shadow: rgba(31, 111, 95, 0.14);
+  position: relative;
+  display: grid;
+  align-content: space-between;
+  gap: 8px;
+  overflow: hidden;
+  min-height: 112px;
+  border-left: 5px solid var(--metric-color);
+  background:
+    linear-gradient(135deg, var(--metric-bg), rgba(255, 255, 255, 0.98) 58%),
+    var(--surface);
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.metric-button::after {
+  content: "";
+  position: absolute;
+  right: -24px;
+  bottom: -28px;
+  width: 78px;
+  height: 78px;
+  border-radius: 50%;
+  background: var(--metric-bg);
+}
+
+.metric-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 22px var(--metric-shadow);
+}
+
+.metric-button .metric-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--metric-color);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.metric-button .metric-top svg {
+  flex: 0 0 auto;
+}
+
+.metric-button strong {
+  position: relative;
+  z-index: 1;
+  color: var(--metric-color);
+  font-size: 32px;
+  line-height: 1;
+}
+
+.metric-button small {
+  position: relative;
+  z-index: 1;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
 }
 
 .metric-button.active {
-  border-color: var(--green);
-  box-shadow: 0 0 0 2px rgba(31, 111, 95, 0.12);
+  border-color: var(--metric-color);
+  box-shadow: 0 12px 24px var(--metric-shadow), 0 0 0 2px var(--metric-ring);
+}
+
+.metric-blue {
+  --metric-color: var(--blue);
+  --metric-bg: rgba(37, 99, 235, 0.1);
+  --metric-ring: rgba(37, 99, 235, 0.2);
+  --metric-shadow: rgba(37, 99, 235, 0.15);
+}
+
+.metric-green {
+  --metric-color: var(--ok);
+  --metric-bg: rgba(22, 163, 74, 0.11);
+  --metric-ring: rgba(22, 163, 74, 0.2);
+  --metric-shadow: rgba(22, 163, 74, 0.14);
+}
+
+.metric-amber {
+  --metric-color: var(--amber);
+  --metric-bg: rgba(212, 157, 18, 0.14);
+  --metric-ring: rgba(212, 157, 18, 0.24);
+  --metric-shadow: rgba(212, 157, 18, 0.16);
+}
+
+.metric-red {
+  --metric-color: var(--red);
+  --metric-bg: rgba(217, 53, 53, 0.11);
+  --metric-ring: rgba(217, 53, 53, 0.2);
+  --metric-shadow: rgba(217, 53, 53, 0.14);
+}
+
+.metric-teal {
+  --metric-color: var(--green);
+  --metric-bg: rgba(31, 111, 95, 0.12);
+  --metric-ring: rgba(31, 111, 95, 0.22);
+  --metric-shadow: rgba(31, 111, 95, 0.15);
+}
+
+.metric-violet {
+  --metric-color: #7c3aed;
+  --metric-bg: rgba(124, 58, 237, 0.1);
+  --metric-ring: rgba(124, 58, 237, 0.2);
+  --metric-shadow: rgba(124, 58, 237, 0.14);
 }
 
 .download-tile {

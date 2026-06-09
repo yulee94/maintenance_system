@@ -886,17 +886,19 @@ function Dashboard({
   const reviewWaiting = workOrders.filter((row) => row.status === "REPORT_SUBMITTED");
   const myWork = workOrders.filter((row) => row.assignedMechanic?.id === user.id && !isClosed(row));
   const metrics = [
-    { id: "total", label: "전체 접수", value: summary?.total ?? 0, rows: workOrders },
-    { id: "completed", label: "최종 완료", value: summary?.completed ?? 0, rows: workOrders.filter(isClosed) },
-    { id: "pending", label: "미결", value: summary?.pending ?? 0, rows: workOrders.filter((row) => !isClosed(row)) },
-    { id: "delayed", label: "지연", value: summary?.delayed ?? 0, rows: delayed },
+    { id: "total", label: "전체 접수", value: summary?.total ?? 0, rows: workOrders, tone: "blue", Icon: ClipboardList },
+    { id: "completed", label: "최종 완료", value: summary?.completed ?? 0, rows: workOrders.filter(isClosed), tone: "green", Icon: CheckCircle2 },
+    { id: "pending", label: "미결", value: summary?.pending ?? 0, rows: workOrders.filter((row) => !isClosed(row)), tone: "amber", Icon: ClipboardCheck },
+    { id: "delayed", label: "지연", value: summary?.delayed ?? 0, rows: delayed, tone: "red", Icon: AlertTriangle },
     {
       id: "planned",
       label: "계획 업무",
       value: summary?.planned ?? 0,
-      rows: workOrders.filter((row) => ["ASSIGNED", "IN_PROGRESS", "PART_WAITING", "ON_HOLD"].includes(row.status))
+      rows: workOrders.filter((row) => ["ASSIGNED", "IN_PROGRESS", "PART_WAITING", "ON_HOLD"].includes(row.status)),
+      tone: "teal",
+      Icon: CalendarDays
     },
-    { id: "urgent", label: "긴급", value: summary?.urgent ?? 0, rows: urgent }
+    { id: "urgent", label: "긴급", value: summary?.urgent ?? 0, rows: urgent, tone: "violet", Icon: Gauge }
   ];
   const selectedMetric = metrics.find((metric) => metric.id === activeMetric) ?? metrics[0];
 
@@ -917,17 +919,22 @@ function Dashboard({
         </div>
       </div>
       <div className="metric-grid">
-        {metrics.map((metric) => (
-          <button
-            className={`metric metric-button ${selectedMetric.id === metric.id ? "active" : ""}`}
-            key={metric.id}
-            type="button"
-            onClick={() => setActiveMetric(metric.id)}
-          >
-            <span>{metric.label}</span>
-            <strong>{metric.value}</strong>
-          </button>
-        ))}
+        {metrics.map((metric) => {
+          const Icon = metric.Icon;
+          return (
+            <button
+              className={`metric metric-button metric-${metric.tone} ${selectedMetric.id === metric.id ? "active" : ""}`}
+              key={metric.id}
+              type="button"
+              onClick={() => setActiveMetric(metric.id)}
+              aria-pressed={selectedMetric.id === metric.id}
+            >
+              <span className="metric-top"><Icon size={16} />{metric.label}</span>
+              <strong>{metric.value}</strong>
+              <small>{metric.rows.length}건 리스트 보기</small>
+            </button>
+          );
+        })}
       </div>
       <div className="section">
         <div className="section-header">
