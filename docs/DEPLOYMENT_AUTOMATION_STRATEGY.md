@@ -72,6 +72,26 @@ maintenance-system:sha-8aa882c
 maintenance-system:2026.06.09-1
 ```
 
+## 배포 플랫폼 선택 기준
+
+초기에는 운영 부담을 줄이기 위해 Kubernetes보다 Managed Container를 우선 검토합니다. 팀 규모, 장애 대응 인력, 서비스 복잡도, 배포 빈도에 따라 단계적으로 확장합니다.
+
+| 규모 | 추천 방식 | 판단 기준 |
+| --- | --- | --- |
+| 초기/MVP | Docker + ECS Fargate 또는 NCP 서버 Auto Scaling | 팀이 작고 빠르게 운영 서버를 열어야 하며, 단일 웹/API 중심일 때 |
+| 중간 규모 | Kubernetes | 여러 서비스, worker, batch, 복잡한 배포 전략이 필요하고 운영 인력이 있을 때 |
+| 대규모/마이크로서비스 | EKS/AKS/GKE/NKS | 다수 마이크로서비스, multi-region, service mesh, 고급 autoscaling이 필요할 때 |
+| 팀이 작음 | Kubernetes보다 Managed Container 우선 | 클러스터 운영보다 제품 기능과 안정성에 집중해야 할 때 |
+
+현재 정비 렌탈 운영 시스템은 Next.js 웹/API, batch, DB, object storage 중심 구조이므로 초기 운영은 Docker 이미지 기반 Managed Container 배포를 우선 추천합니다. Kubernetes는 서비스가 여러 개로 분리되고 전담 운영 역량이 생긴 뒤 검토합니다.
+
+추천 우선순위:
+
+1. 초기 운영: Docker image + Managed Container 또는 서버 Auto Scaling
+2. 안정화 후: staging/prod blue-green 또는 rolling deployment 자동화
+3. 서비스 분리 후: worker/batch/API 분리와 container orchestration 검토
+4. 대규모 전환: EKS/AKS/GKE/NKS 같은 managed Kubernetes 검토
+
 ## Staging 배포
 
 Staging은 production 전 마지막 검수 환경입니다.
