@@ -153,6 +153,10 @@ async function getDeviceId() {
   return id;
 }
 
+export function getMobileDeviceId() {
+  return getDeviceId();
+}
+
 function getSecureItem(key: string) {
   return SecureStore.getItemAsync(key, secureStoreOptions);
 }

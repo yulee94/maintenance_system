@@ -174,6 +174,7 @@ model User {
   auditLogs                   AuditLog[]                   @relation("AuditActor")
   notifications               Notification[]               @relation("NotificationUser")
   mobileDevices               MobileDevice[]               @relation("UserMobileDevices")
+  offlineSyncRequests         OfflineSyncRequest[]          @relation("UserOfflineSyncRequests")
   excelExports                ExcelExportLog[]             @relation("ExcelExportUser")
   workDiaries                 WorkDiary[]                  @relation("WorkDiaryAuthor")
   regularInspectionSchedules  RegularInspectionSchedule[]  @relation("RegularInspectionMechanic")
@@ -678,6 +679,31 @@ model MobileDevice {
   @@index([pushToken])
   @@index([userId, branchId])
   @@map("mobile_devices")
+}
+
+model OfflineSyncRequest {
+  id            String    @id @default(cuid())
+  requestId     String    @map("request_id")
+  syncId        String    @map("sync_id")
+  userId        String    @map("user_id")
+  branchId      String?   @map("branch_id")
+  deviceId      String    @map("device_id")
+  operationType String    @map("operation_type")
+  payload       Json
+  status        String    @default("RECEIVED")
+  result        Json?
+  error         String?
+  createdAt     DateTime  @map("created_at")
+  receivedAt    DateTime  @default(now()) @map("received_at")
+  processedAt   DateTime? @map("processed_at")
+
+  user User @relation("UserOfflineSyncRequests", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([deviceId, requestId])
+  @@index([syncId])
+  @@index([userId, createdAt])
+  @@index([branchId])
+  @@map("offline_sync_requests")
 }
 
 model ExcelExportLog {

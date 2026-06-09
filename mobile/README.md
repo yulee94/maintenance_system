@@ -46,6 +46,7 @@ EXPO_PUBLIC_API_BASE_URL=http://192.168.0.10:3000
 - `GET /api/v1/tasks`
 - `POST /api/v1/tasks/:id/start`
 - `POST /api/v1/tasks/:id/report`
+- `POST /api/v1/sync`
 - `POST /api/v1/ai`
 - `GET /api/v2/tasks`
 
@@ -80,6 +81,29 @@ Authorization: Bearer {session-token}
 - 관리자 토큰 장기 저장
 
 꼭 필요한 토큰, 기기 식별자, 앱 잠금 설정값은 Secure Storage에만 저장한다.
+
+## 오프라인 모드
+
+현장 정비사는 네트워크가 끊겨도 작업 시작과 완료보고를 저장할 수 있다.
+
+```text
+앱 로컬 DB
+  -> 오프라인 중 작업 저장
+  -> 인터넷 복구
+  -> 중앙 서버와 동기화
+```
+
+앱은 `expo-sqlite`로 `maintenance_offline.db`를 만들고, 오프라인 작업을 `offline_requests` 큐에 저장한다. 저장 필드는 다음을 포함한다.
+
+- `request_id`
+- `sync_id`
+- `created_at`
+- `device_id`
+- `branch_id`
+- `operation_type`
+- `payload`
+
+서버는 `/api/v1/sync`에서 `device_id + request_id` 기준으로 중복 요청을 막는다. 같은 큐 항목이 인터넷 복구 후 여러 번 전송되어도 이미 처리된 결과를 재사용한다.
 
 ## 푸시 알림
 

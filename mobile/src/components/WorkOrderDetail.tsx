@@ -1,7 +1,7 @@
 import { Alert, Modal, Pressable, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useState } from "react";
 import type { WorkOrder } from "../api/types";
-import { startWorkOrder, submitWorkReport } from "../api/client";
+import { startWorkOrderWithOffline, submitWorkReportWithOffline } from "../offline/workOrders";
 import { colors } from "../theme/theme";
 import { equipmentName, shortDate, siteName, statusLabel } from "../utils";
 
@@ -26,9 +26,14 @@ export function WorkOrderDetail({ workOrder, visible, onClose, onChanged }: Work
     if (!workOrder) return;
     setSubmitting(true);
     try {
-      await startWorkOrder(workOrder.id);
-      onChanged();
-      Alert.alert("작업 시작", "작업 상태가 업데이트되었습니다.");
+      const result = await startWorkOrderWithOffline(workOrder.id, workOrder.branchId);
+      if (!result.queued) onChanged();
+      Alert.alert(
+        "작업 시작",
+        result.queued
+          ? `인터넷 연결이 없어 로컬 DB에 저장했습니다. 복구 후 자동 동기화됩니다.\nrequest_id: ${result.requestId}`
+          : "작업 상태가 업데이트되었습니다."
+      );
     } catch (error) {
       Alert.alert("처리 실패", error instanceof Error ? error.message : "작업 시작에 실패했습니다.");
     } finally {
@@ -44,15 +49,24 @@ export function WorkOrderDetail({ workOrder, visible, onClose, onChanged }: Work
     }
     setSubmitting(true);
     try {
-      await submitWorkReport(workOrder.id, {
-        resultType: "COMPLETED",
-        diagnosisResult: diagnosisResult.trim(),
-        actionTaken: actionTaken.trim()
-      });
+      const result = await submitWorkReportWithOffline(
+        workOrder.id,
+        {
+          resultType: "COMPLETED",
+          diagnosisResult: diagnosisResult.trim(),
+          actionTaken: actionTaken.trim()
+        },
+        workOrder.branchId
+      );
       setDiagnosisResult("");
       setActionTaken("");
-      onChanged();
-      Alert.alert("완료보고 제출", "관리자 승인 대기로 전환되었습니다.");
+      if (!result.queued) onChanged();
+      Alert.alert(
+        "완료보고 제출",
+        result.queued
+          ? `인터넷 연결이 없어 로컬 DB에 저장했습니다. 복구 후 자동 동기화됩니다.\nrequest_id: ${result.requestId}`
+          : "관리자 승인 대기로 전환되었습니다."
+      );
     } catch (error) {
       Alert.alert("제출 실패", error instanceof Error ? error.message : "완료보고 제출에 실패했습니다.");
     } finally {
@@ -74,9 +88,13 @@ export function WorkOrderDetail({ workOrder, visible, onClose, onChanged }: Work
             <Text style={styles.closeText}>닫기</Text>
           </TouchableOpacity>
         </View>
-        <Text style={styles.meta}>{equipmentName(workOrder)} · {statusLabel[workOrder.status] ?? workOrder.status}</Text>
+        <Text style={styles.meta}>
+          {equipmentName(workOrder)} · {statusLabel[workOrder.status] ?? workOrder.status}
+        </Text>
         <Text style={styles.body}>{workOrder.faultDescription}</Text>
-        <Text style={styles.meta}>접수 {shortDate(workOrder.requestDate)} · 목표 {shortDate(workOrder.targetDueDate)}</Text>
+        <Text style={styles.meta}>
+          접수 {shortDate(workOrder.requestDate)} · 목표 {shortDate(workOrder.targetDueDate)}
+        </Text>
 
         <View style={styles.actionRow}>
           <TouchableOpacity disabled={!canStart || submitting} style={[styles.button, !canStart && styles.disabled]} onPress={handleStart}>
@@ -102,7 +120,9 @@ export function WorkOrderDetail({ workOrder, visible, onClose, onChanged }: Work
         <TouchableOpacity disabled={!canReport || submitting} style={[styles.reportButton, !canReport && styles.disabled]} onPress={handleReport}>
           <Text style={styles.reportButtonText}>완료보고 제출</Text>
         </TouchableOpacity>
-        <Text style={styles.helper}>사진 첨부는 다음 릴리스에서 네이티브 카메라/앨범 선택 기능으로 연결합니다.</Text>
+        <Text style={styles.helper}>
+          오프라인 상태에서는 로컬 DB에 먼저 저장되고, 인터넷이 복구되면 중앙 서버와 자동 동기화됩니다.
+        </Text>
       </View>
     </Modal>
   );

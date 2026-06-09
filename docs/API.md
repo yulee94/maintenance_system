@@ -23,6 +23,7 @@
 - `GET /api/v1/tasks`: 접근 가능한 정비건 목록 및 요약 조회
 - `POST /api/v1/tasks/:id/start`: 모바일 작업 시작
 - `POST /api/v1/tasks/:id/report`: 모바일 완료보고 제출
+- `POST /api/v1/sync`: 모바일 오프라인 작업 동기화, `request_id + device_id` 기준 중복 처리 방지
 - `POST /api/v1/ai`: 모바일 AI 문의/보고서 작성 보조
 
 모바일 앱 공통 헤더:
@@ -46,6 +47,17 @@ Authorization: Bearer {session-token}
 ```
 
 `MOBILE_MFA_REQUIRED=true` 환경에서는 `/api/v1/login`이 OTP/MFA 확인 전 `sessionToken`을 발급하지 않는다. 개발/데모용 OTP는 `MOBILE_TEST_OTP_CODE`로만 사용하고, 운영 전에는 TOTP/WebAuthn/SSO MFA provider로 교체한다.
+
+모바일 오프라인 동기화 필수 필드:
+
+```text
+request_id
+sync_id
+created_at
+device_id
+```
+
+서버는 `device_id + request_id`를 unique key로 저장하여 같은 요청이 재전송되어도 실제 업무 처리는 한 번만 수행한다.
 
 ## Mobile App API v2
 
