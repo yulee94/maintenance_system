@@ -250,6 +250,7 @@ const tabs = [
 type TabId = (typeof tabs)[number]["id"];
 type MobilePreviewMode = "mechanic" | "admin" | "executive";
 type MobilePreviewScreen = "today" | "workorders" | "completed" | "ai";
+type MobileMetricFilter = "open" | "completed" | "work" | "urgent" | null;
 type MobileAiResult = {
   source: "openai" | "demo" | "local";
   answer: string;
@@ -399,9 +400,7 @@ export function AppShell() {
         </main>
         <MobileAppPreview
           user={user}
-          summary={summary}
           workOrders={workOrders}
-          users={users}
           onOpenWorkOrder={(id) => {
             setSelectedId(id);
             setTab(canAdmin || hasAnyRole(user, ["EXECUTIVE", "RECEPTIONIST"]) ? "workorders" : "mechanic");
@@ -414,15 +413,11 @@ export function AppShell() {
 
 function MobileAppPreview({
   user,
-  summary,
   workOrders,
-  users,
   onOpenWorkOrder
 }: {
   user: AuthUser;
-  summary: Summary | null;
   workOrders: WorkOrder[];
-  users: UserRow[];
   onOpenWorkOrder: (id: string) => void;
 }) {
   const availableModes = useMemo(() => {
@@ -435,6 +430,7 @@ function MobileAppPreview({
   }, [user]);
   const [mode, setMode] = useState<MobilePreviewMode>(() => initialMobilePreviewMode(user));
   const [screen, setScreen] = useState<MobilePreviewScreen>("today");
+  const [metricFilter, setMetricFilter] = useState<MobileMetricFilter>(null);
   const [aiQuestion, setAiQuestion] = useState("시동은 걸리지만 출력이 떨어지는 경우 과거에는 어떻게 조치했나요?");
   const [aiResult, setAiResult] = useState<MobileAiResult | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
@@ -469,17 +465,34 @@ function MobileAppPreview({
   );
   const executiveRows = useMemo(() => noteworthyWorkOrders(workOrders), [workOrders]);
   const workOrderRows = mode === "mechanic" ? mechanicRows : mode === "admin" ? adminRows : executiveRows;
-  const previewRows =
-    screen === "completed"
+  const previewRows = metricFilter
+    ? metricFilter === "open"
+      ? openRows
+      : metricFilter === "completed"
+        ? completedRows
+        : metricFilter === "urgent"
+          ? urgentRows
+          : workOrderRows
+    : screen === "completed"
       ? completedRows
       : screen === "today"
         ? (mode === "mechanic" ? todayRows.filter((row) => row.assignedMechanic?.id === user.id) : todayRows)
         : workOrderRows;
-  const visibleRows = sortWorkOrders(previewRows, screen === "completed" ? "requestDate" : mode === "executive" ? "priority" : "target").slice(0, 5);
-  const activeMechanics = users.filter((row) => row.roles.some((role) => role.role.code === "MECHANIC") && row.isActive).length;
-  const completionRate = summary?.completionRate ?? 0;
-  const screenTitle =
-    screen === "today" ? "오늘 업무" : screen === "workorders" ? "정비건" : screen === "completed" ? "완료건" : "AI 문의";
+  const visibleRows = sortWorkOrders(previewRows, screen === "completed" || metricFilter === "completed" ? "requestDate" : mode === "executive" ? "priority" : "target").slice(0, 5);
+  const screenTitle = metricFilter
+    ? metricFilter === "open"
+      ? "미결 업무"
+      : metricFilter === "completed"
+        ? "완료건"
+        : metricFilter === "urgent"
+          ? "긴급 업무"
+          : "내 작업"
+    : screen === "today" ? "오늘 업무" : screen === "workorders" ? "정비건" : screen === "completed" ? "완료건" : "AI 문의";
+
+  function showMetricRows(filter: Exclude<MobileMetricFilter, null>) {
+    setMetricFilter(filter);
+    setScreen(filter === "completed" ? "completed" : "workorders");
+  }
 
   async function askAi(event?: React.FormEvent) {
     event?.preventDefault();
@@ -514,6 +527,7 @@ function MobileAppPreview({
             onClick={() => {
               setMode(item.id);
               setScreen("today");
+              setMetricFilter(null);
             }}
           >
             {item.label}
@@ -537,9 +551,10 @@ function MobileAppPreview({
           </header>
 
           <section className="mobile-stats">
-            <MobileStat label={mode === "executive" ? "완료율" : "미결"} value={mode === "executive" ? `${completionRate}%` : `${openRows.length}`} />
-            <MobileStat label={mode === "mechanic" ? "내 작업" : mode === "admin" ? "승인" : "지연"} value={`${mode === "mechanic" ? mechanicRows.length : mode === "admin" ? reportWaiting.length : delayedRows.length}`} />
-            <MobileStat label={mode === "admin" ? "정비사" : "긴급"} value={`${mode === "admin" ? activeMechanics : urgentRows.length}`} />
+            <MobileStat label="미결" value={`${openRows.length}`} active={metricFilter === "open"} onClick={() => showMetricRows("open")} />
+            <MobileStat label="완료" value={`${completedRows.length}`} active={metricFilter === "completed"} onClick={() => showMetricRows("completed")} />
+            <MobileStat label="내 작업" value={`${workOrderRows.length}`} active={metricFilter === "work"} onClick={() => showMetricRows("work")} />
+            <MobileStat label="긴급" value={`${urgentRows.length}`} active={metricFilter === "urgent"} onClick={() => showMetricRows("urgent")} />
           </section>
 
           <div className="mobile-screen-title">
@@ -548,7 +563,7 @@ function MobileAppPreview({
               <strong>{screenTitle}</strong>
             </div>
             <span className={`chip ${screen === "ai" ? "blue" : mode === "executive" ? "amber" : "green"}`}>
-              {screen === "ai" ? (aiResult?.source === "openai" ? "GPT" : "데이터") : `${visibleRows.length}건`}
+              {screen === "ai" ? (aiResult?.source === "openai" ? "GPT" : "데이터") : `${previewRows.length}건`}
             </span>
           </div>
 
@@ -570,19 +585,19 @@ function MobileAppPreview({
           </div>
 
           <nav className="mobile-bottom-nav" aria-label="모바일 화면 전환">
-            <button className={screen === "today" ? "active" : ""} type="button" onClick={() => setScreen("today")}>
+            <button className={screen === "today" && !metricFilter ? "active" : ""} type="button" onClick={() => { setScreen("today"); setMetricFilter(null); }}>
               <CalendarDays size={15} />
               오늘
             </button>
-            <button className={screen === "workorders" ? "active" : ""} type="button" onClick={() => setScreen("workorders")}>
+            <button className={screen === "workorders" && !metricFilter ? "active" : ""} type="button" onClick={() => { setScreen("workorders"); setMetricFilter(null); }}>
               <ClipboardList size={15} />
               정비건
             </button>
-            <button className={screen === "completed" ? "active" : ""} type="button" onClick={() => setScreen("completed")}>
+            <button className={screen === "completed" && !metricFilter ? "active" : ""} type="button" onClick={() => { setScreen("completed"); setMetricFilter(null); }}>
               <CheckCircle2 size={15} />
               완료건
             </button>
-            <button className={screen === "ai" ? "active" : ""} type="button" onClick={() => setScreen("ai")}>
+            <button className={screen === "ai" ? "active" : ""} type="button" onClick={() => { setScreen("ai"); setMetricFilter(null); }}>
               <Bot size={15} />
               AI
             </button>
@@ -669,12 +684,22 @@ function MobileAiPanel({
   );
 }
 
-function MobileStat({ label, value }: { label: string; value: string }) {
+function MobileStat({
+  label,
+  value,
+  active,
+  onClick
+}: {
+  label: string;
+  value: string;
+  active: boolean;
+  onClick: () => void;
+}) {
   return (
-    <div>
+    <button className={active ? "active" : ""} type="button" onClick={onClick}>
       <span>{label}</span>
       <strong>{value}</strong>
-    </div>
+    </button>
   );
 }
 
