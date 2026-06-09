@@ -262,8 +262,11 @@ type MobileAiAlert = {
   primaryWorkOrderId: string;
 };
 type MobileAiResult = {
-  source: "openai" | "demo" | "local";
+  source: "openai" | "demo" | "local" | "policy";
   answer: string;
+  task?: string;
+  denied?: boolean;
+  allowedRoles?: string[];
   matches: {
     requestNo: string;
     customer: string;
@@ -581,6 +584,7 @@ function MobileAppPreview({
           <div className="mobile-content">
             {screen === "ai" ? (
               <MobileAiPanel
+                user={user}
                 alerts={aiAlerts}
                 question={aiQuestion}
                 result={aiResult}
@@ -622,6 +626,7 @@ function MobileAppPreview({
 }
 
 function MobileAiPanel({
+  user,
   alerts,
   question,
   result,
@@ -631,6 +636,7 @@ function MobileAiPanel({
   onAsk,
   onOpenWorkOrder
 }: {
+  user: AuthUser;
   alerts: MobileAiAlert[];
   question: string;
   result: MobileAiResult | null;
@@ -642,9 +648,11 @@ function MobileAiPanel({
 }) {
   const examples = [
     "시동은 걸리는데 출력이 떨어질 때 과거 조치 추천",
-    "유압 라인 누유가 재발하면 무엇을 먼저 확인할까?",
-    "브레이크 밀림 증상 과거 수리 이력 찾아줘"
+    "완료보고 작성 도와줘",
+    "일일 보고서 초안 만들어줘",
+    "내 KPI가 어떻게 돼?"
   ];
+  const currentRoleText = formatRoles(user.roles);
 
   return (
     <div className="mobile-ai-panel">
@@ -674,8 +682,36 @@ function MobileAiPanel({
           </div>
         )}
       </section>
+      <section className="mobile-ai-role-policy" aria-label="역할별 AI 자료 권한">
+        <div className="mobile-ai-role-head">
+          <span>현재 권한</span>
+          <strong>{currentRoleText}</strong>
+        </div>
+        <div className="mobile-ai-role-grid">
+          <div>
+            <span>정비사</span>
+            <strong>정비 문의, 내 작업 완료보고</strong>
+            <p>KPI/성과 조회 불가</p>
+          </div>
+          <div>
+            <span>관리자</span>
+            <strong>운영 보고, KPI, 승인 자료</strong>
+            <p>계정/감사 자료 제한</p>
+          </div>
+          <div>
+            <span>임원</span>
+            <strong>보고자료, KPI, 리스크 요약</strong>
+            <p>계정 변경 불가</p>
+          </div>
+          <div>
+            <span>최고관리자</span>
+            <strong>전체 자료, 계정/권한/감사</strong>
+            <p>민감 자료 포함</p>
+          </div>
+        </div>
+      </section>
       <form className="mobile-ai-form" onSubmit={onAsk}>
-        <label htmlFor="mobile-ai-question">정비/업무 문의</label>
+        <label htmlFor="mobile-ai-question">정비/보고/업무 문의</label>
         <textarea
           id="mobile-ai-question"
           value={question}
@@ -698,9 +734,9 @@ function MobileAiPanel({
       <div className="mobile-ai-answer">
         {result ? (
           <>
-            <div className="mobile-ai-source">
-              <span>{result.source === "openai" ? "GPT 연결 답변" : "데모/과거 데이터 추천"}</span>
-              <strong>{result.matches.length}개 유사 이력 참조</strong>
+            <div className={`mobile-ai-source ${result.denied ? "denied" : ""}`}>
+              <span>{result.denied ? "권한 정책 차단" : result.source === "openai" ? "GPT 연결 답변" : "업무 AI 답변"}</span>
+              <strong>{result.denied ? "조회 불가" : `${result.matches.length}개 유사 이력 참조`}</strong>
             </div>
             <pre>{result.answer}</pre>
             {result.matches.length ? (
