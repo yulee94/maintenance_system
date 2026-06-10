@@ -2035,6 +2035,33 @@ a {
   padding: 12px;
 }
 
+.clickable-card {
+  cursor: pointer;
+}
+
+.clickable-card:hover,
+.clickable-card:focus-visible {
+  border-color: var(--green);
+  box-shadow: 0 12px 24px rgba(31, 111, 95, 0.12);
+  outline: none;
+}
+
+.clickable-kv {
+  width: 100%;
+  border: 1px solid transparent;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.clickable-kv:hover,
+.clickable-kv:focus-visible {
+  border-color: var(--line);
+  background: #f8faf9;
+  outline: none;
+}
+
 .daily-work-card.p1 {
   border-left-color: var(--red);
 }
@@ -2636,6 +2663,8 @@ a {
 .schedule-bar {
   display: block;
   overflow: hidden;
+  width: 100%;
+  border: 0;
   min-height: 22px;
   border-radius: 5px;
   padding: 4px 6px;
@@ -2644,6 +2673,8 @@ a {
   font-weight: 800;
   text-overflow: ellipsis;
   white-space: nowrap;
+  text-align: left;
+  cursor: pointer;
 }
 
 .schedule-bar.p1 {

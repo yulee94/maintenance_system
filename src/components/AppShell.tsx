@@ -589,7 +589,18 @@ export function AppShell() {
       <div className="app-workspace">
         <main className="main desktop-workspace" aria-label={t("layout.desktopAria", "데스크톱 업무 화면")}>
           {message ? <p className="notice">{message}</p> : null}
-          {tab === "dashboard" ? <Dashboard summary={summary} workOrders={workOrders} user={user} select={setSelectedId} switchTab={setTab} /> : null}
+          {tab === "dashboard" ? (
+            <Dashboard
+              summary={summary}
+              workOrders={workOrders}
+              user={user}
+              select={(id) => {
+                setSelectedId(id);
+                setTab(canAdmin || hasAnyRole(user, ["EXECUTIVE", "RECEPTIONIST"]) ? "workorders" : "mechanic");
+              }}
+              switchTab={setTab}
+            />
+          ) : null}
           {tab === "appwork" ? (
             <UnifiedWorkAppPanel
               user={user}
@@ -635,8 +646,8 @@ export function AppShell() {
           ) : null}
           {tab === "mechanic" ? <MechanicPanel user={user} workOrders={workOrders} selected={selected} onSelect={setSelectedId} onChanged={refresh} /> : null}
           {tab === "equipment" ? <EquipmentPanel canManage={canAdmin} onOpenWorkOrder={(id) => { setSelectedId(id); setTab("workorders"); }} /> : null}
-          {tab === "calendar" ? <CalendarPanel /> : null}
-          {tab === "kpi" ? <KpiPanel enabled={canKpi} workOrders={workOrders} /> : null}
+          {tab === "calendar" ? <CalendarPanel onOpen={(id) => { setSelectedId(id); setTab(canAdmin || hasAnyRole(user, ["EXECUTIVE", "RECEPTIONIST"]) ? "workorders" : "mechanic"); }} /> : null}
+          {tab === "kpi" ? <KpiPanel enabled={canKpi} workOrders={workOrders} onOpen={(id) => { setSelectedId(id); setTab("workorders"); }} /> : null}
           {tab === "admin" ? <AdminPanel currentUser={user} users={users} onChanged={refresh} /> : null}
           {tab === "exports" ? <ExportsPanel /> : null}
         </main>
@@ -1694,7 +1705,19 @@ function DailyStatusPanel({
           </div>
           <div className="daily-work-list">
             {filtered.map((row) => (
-              <article className={`daily-work-card ${priorityClass[row.priorityLevel]}`} key={row.id}>
+              <article
+                className={`daily-work-card clickable-card ${priorityClass[row.priorityLevel]}`}
+                key={row.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => onOpen(row.id)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    onOpen(row.id);
+                  }
+                }}
+              >
                 <div className="daily-work-card-main">
                   <div className="daily-card-head">
                     <div>
@@ -2986,7 +3009,7 @@ function ReportAttachments({ attachments }: { attachments: WorkReportAttachment[
   );
 }
 
-function CalendarPanel() {
+function CalendarPanel({ onOpen }: { onOpen: (id: string) => void }) {
   const [rows, setRows] = useState<WorkOrder[]>([]);
   const [month, setMonth] = useState(() => new Date());
   const [selectedDate, setSelectedDate] = useState(() => toDateKey(new Date()));
@@ -3051,9 +3074,18 @@ function CalendarPanel() {
               </div>
               <div className="schedule-stack">
                 {visibleRows.map((row) => (
-                  <span className={`schedule-bar ${priorityClass[row.priorityLevel]}`} key={row.id} title={calendarScheduleTitle(row, key)}>
+                  <button
+                    className={`schedule-bar ${priorityClass[row.priorityLevel]}`}
+                    key={row.id}
+                    title={calendarScheduleTitle(row, key)}
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onOpen(row.id);
+                    }}
+                  >
                     {calendarScheduleLabel(row)}
-                  </span>
+                  </button>
                 ))}
                 {hiddenCount ? (
                   <button
@@ -3080,7 +3112,7 @@ function CalendarPanel() {
           </div>
           <span className="chip">{selectedRows.length}건</span>
         </div>
-        <WorkList workOrders={sortWorkOrders(selectedRows, "priority")} onSelect={() => undefined} />
+        <WorkList workOrders={sortWorkOrders(selectedRows, "priority")} onSelect={onOpen} />
       </div>
     </div>
   );
@@ -3307,7 +3339,7 @@ function EquipmentPanel({ canManage, onOpenWorkOrder }: { canManage: boolean; on
   );
 }
 
-function KpiPanel({ enabled, workOrders }: { enabled: boolean; workOrders: WorkOrder[] }) {
+function KpiPanel({ enabled, workOrders, onOpen }: { enabled: boolean; workOrders: WorkOrder[]; onOpen: (id: string) => void }) {
   const [mechanics, setMechanics] = useState<Record<string, unknown>[]>([]);
   const [priorities, setPriorities] = useState<Record<string, unknown>[]>([]);
   useEffect(() => {
@@ -3370,11 +3402,11 @@ function KpiPanel({ enabled, workOrders }: { enabled: boolean; workOrders: WorkO
           <div className="tool-panel">
             <h3>주요 특이사항</h3>
             {noteworthy.map((row) => (
-              <div className="kv compact" key={row.id}>
+              <button className="kv compact clickable-kv" key={row.id} type="button" onClick={() => onOpen(row.id)}>
                 <span>{row.requestNo} · {priorityLabel[row.priorityLevel]} · {labelStatus(row.status)}</span>
                 <strong>{row.customer?.name ?? "-"} / {row.assignedMechanic?.name ?? "미배정"}</strong>
                 <p className="muted">{row.actionTaken || row.diagnosisResult || row.faultDescription}</p>
-              </div>
+              </button>
             ))}
           </div>
         </div>
