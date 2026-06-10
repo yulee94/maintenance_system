@@ -2449,19 +2449,151 @@ a {
   border-left: 5px solid var(--blue);
 }
 
+.work-list-shell {
+  display: grid;
+  gap: 10px;
+}
+
+.list-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 38px;
+}
+
+.segmented-control {
+  display: inline-flex;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #f8faf9;
+}
+
+.segmented-control button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 76px;
+  border: 0;
+  border-right: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  padding: 7px 9px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.segmented-control button:last-child {
+  border-right: 0;
+}
+
+.segmented-control button.active {
+  background: var(--green);
+  color: #fff;
+}
+
+.pager-meta {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.pager-meta label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pager-meta select {
+  min-width: 72px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  padding: 6px 8px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .work-list {
   display: grid;
   gap: 10px;
 }
 
+.work-list-grid {
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.work-list-list {
+  gap: 6px;
+}
+
 .work-card {
   display: grid;
   gap: 10px;
+  min-height: 98px;
   border: 1px solid var(--line);
   border-left-width: 5px;
   border-radius: 8px;
   background: var(--surface);
   padding: 14px;
+  text-align: left;
+}
+
+.work-list-list .work-card {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: 64px;
+  padding: 10px 12px;
+}
+
+.work-list-list .work-card .chips {
+  justify-content: flex-end;
+}
+
+.work-list-grid .work-card {
+  align-content: space-between;
+  min-height: 154px;
+}
+
+.pagination-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 36px;
+}
+
+.pagination-bar button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border-radius: 6px;
+  padding: 7px 10px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.pagination-bar button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.pagination-bar span {
+  min-width: 68px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  text-align: center;
 }
 
 .work-card.p1 {

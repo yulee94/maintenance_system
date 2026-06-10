@@ -7,6 +7,8 @@ import {
   Bell,
   Bot,
   CalendarDays,
+  ChevronLeft,
+  ChevronRight,
   CheckCircle2,
   ClipboardCheck,
   ClipboardList,
@@ -15,11 +17,14 @@ import {
   Gauge,
   KeyRound,
   Languages,
+  LayoutGrid,
+  List,
   Lock,
   LogOut,
   Monitor,
   Plus,
   RefreshCcw,
+  Rows3,
   Search,
   Send,
   Shield,
@@ -242,6 +247,10 @@ type SelectOption = {
   value: string;
   label: string;
 };
+
+type WorkListViewMode = "list" | "cards" | "grid";
+
+const workListPageSizes = [6, 12, 24];
 
 const roleLabel: Record<string, string> = {
   SUPER_ADMIN: "최고 관리자",
@@ -1064,7 +1073,7 @@ function UnifiedWorkAppPanel({
               </div>
               <span className="chip green">{sortedRows.length}건</span>
             </div>
-            <WorkList workOrders={sortedRows.slice(0, 20)} onSelect={onOpenWorkOrder} />
+            <WorkList workOrders={sortedRows} onSelect={onOpenWorkOrder} />
           </section>
           <aside className="unified-work-side">
             <DesktopAiAlertList alerts={aiAlerts.slice(0, 5)} onOpenWorkOrder={onOpenWorkOrder} />
@@ -1555,7 +1564,7 @@ function Dashboard({
           </div>
           <span className="chip">{selectedMetric.rows.length}건</span>
         </div>
-        <WorkList workOrders={selectedMetric.rows.slice(0, 12)} onSelect={select} />
+        <WorkList workOrders={selectedMetric.rows} onSelect={select} />
       </div>
       <div className="insight-grid">
         <Insight title="긴급 처리" value={`${urgent.length}건`} text={urgent[0] ? `${urgent[0].customer?.name} · ${urgent[0].faultDescription}` : "긴급 미결 건 없음"} tone="red" />
@@ -1568,7 +1577,7 @@ function Dashboard({
           <div className="section-header">
             <h2>우선 처리 업무</h2>
           </div>
-          <WorkList workOrders={workOrders.slice(0, 8)} onSelect={select} />
+          <WorkList workOrders={workOrders} onSelect={select} />
         </div>
         <div className="tool-panel">
           <h2>시연 포인트</h2>
@@ -1595,6 +1604,8 @@ function DailyStatusPanel({
   const [mechanicFilter, setMechanicFilter] = useState("ALL");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [sortBy, setSortBy] = useState("priority");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(6);
   const mechanicOptions = useMemo(() => makeMechanicOptions(workOrders, users), [users, workOrders]);
   const dailyRows = useMemo(
     () => workOrders.filter((row) => isDailyStatusTarget(row, selectedDate)),
@@ -1622,6 +1633,14 @@ function DailyStatusPanel({
   const inProgressRows = dailyRows.filter((row) => ["ASSIGNED", "IN_PROGRESS", "PART_WAITING", "ON_HOLD", "DELAYED"].includes(row.status));
   const mechanicLoad = useMemo(() => mechanicDailyLoad(dailyRows), [dailyRows]);
   const topRisks = sortWorkOrders(delayedRows.length ? delayedRows : dailyRows.filter((row) => !isClosed(row)), "priority").slice(0, 4);
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const safePage = Math.min(page, pageCount);
+  const firstIndex = (safePage - 1) * pageSize;
+  const visibleRows = filtered.slice(firstIndex, firstIndex + pageSize);
+
+  useEffect(() => {
+    setPage(1);
+  }, [filtered.length, pageSize]);
 
   return (
     <div className="section daily-status-view">
@@ -1703,8 +1722,19 @@ function DailyStatusPanel({
             </div>
             <span className="chip">{filtered.length}건</span>
           </div>
+          <div className="list-toolbar">
+            <div className="pager-meta">
+              <label>
+                표시
+                <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}>
+                  {workListPageSizes.map((size) => <option key={size} value={size}>{size}건</option>)}
+                </select>
+              </label>
+              <span>{filtered.length ? `${firstIndex + 1}-${Math.min(firstIndex + visibleRows.length, filtered.length)} / ${filtered.length}건` : "0건"}</span>
+            </div>
+          </div>
           <div className="daily-work-list">
-            {filtered.map((row) => (
+            {visibleRows.map((row) => (
               <article
                 className={`daily-work-card clickable-card ${priorityClass[row.priorityLevel]}`}
                 key={row.id}
@@ -1760,6 +1790,17 @@ function DailyStatusPanel({
             ))}
             {!filtered.length ? <p className="notice">표시할 일일업무가 없습니다.</p> : null}
           </div>
+          {pageCount > 1 ? (
+            <div className="pagination-bar">
+              <button type="button" disabled={safePage <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))}>
+                <ChevronLeft size={14} />이전
+              </button>
+              <span>{safePage} / {pageCount}</span>
+              <button type="button" disabled={safePage >= pageCount} onClick={() => setPage((current) => Math.min(pageCount, current + 1))}>
+                다음<ChevronRight size={14} />
+              </button>
+            </div>
+          ) : null}
         </section>
 
         <aside className="daily-side-panel">
@@ -2220,36 +2261,85 @@ function MechanicPanel({
 function WorkList({
   workOrders,
   selectedId,
-  onSelect
+  onSelect,
+  defaultPageSize = 12
 }: {
   workOrders: WorkOrder[];
   selectedId?: string | null;
   onSelect: (id: string) => void;
+  defaultPageSize?: number;
 }) {
+  const [viewMode, setViewMode] = useState<WorkListViewMode>("cards");
+  const [pageSize, setPageSize] = useState(defaultPageSize);
+  const [page, setPage] = useState(1);
+  const pageCount = Math.max(1, Math.ceil(workOrders.length / pageSize));
+  const safePage = Math.min(page, pageCount);
+  const firstIndex = (safePage - 1) * pageSize;
+  const visibleRows = workOrders.slice(firstIndex, firstIndex + pageSize);
+
+  useEffect(() => {
+    setPage(1);
+  }, [workOrders.length, pageSize, viewMode]);
+
   if (!workOrders.length) return <p className="notice">표시할 정비건이 없습니다.</p>;
   return (
-    <div className="work-list">
-      {workOrders.map((item) => (
-        <button
-          key={item.id}
-          className={`work-card ${priorityClass[item.priorityLevel]} ${selectedId === item.id ? "selected" : ""}`}
-          onClick={() => onSelect(item.id)}
-          type="button"
-        >
-          <div className="work-card-header">
-            <div className="work-title">
-              <strong>{item.requestNo} · {item.customer?.name ?? "미지정"}</strong>
-              <span className="muted">{item.equipmentInput ?? item.equipmentNoNormalized} · {item.faultDescription}</span>
+    <div className="work-list-shell">
+      <div className="list-toolbar">
+        <div className="segmented-control" aria-label="정비건 보기 방식">
+          <button className={viewMode === "list" ? "active" : ""} type="button" onClick={() => setViewMode("list")}>
+            <List size={14} />간단
+          </button>
+          <button className={viewMode === "cards" ? "active" : ""} type="button" onClick={() => setViewMode("cards")}>
+            <Rows3 size={14} />버튼
+          </button>
+          <button className={viewMode === "grid" ? "active" : ""} type="button" onClick={() => setViewMode("grid")}>
+            <LayoutGrid size={14} />바둑판
+          </button>
+        </div>
+        <div className="pager-meta">
+          <label>
+            표시
+            <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}>
+              {workListPageSizes.map((size) => <option key={size} value={size}>{size}건</option>)}
+            </select>
+          </label>
+          <span>{firstIndex + 1}-{Math.min(firstIndex + visibleRows.length, workOrders.length)} / {workOrders.length}건</span>
+        </div>
+      </div>
+      <div className={`work-list work-list-${viewMode}`}>
+        {visibleRows.map((item) => (
+          <button
+            key={item.id}
+            className={`work-card ${priorityClass[item.priorityLevel]} ${selectedId === item.id ? "selected" : ""}`}
+            onClick={() => onSelect(item.id)}
+            type="button"
+          >
+            <div className="work-card-header">
+              <div className="work-title">
+                <strong>{item.requestNo} · {item.customer?.name ?? "미지정"}</strong>
+                <span className="muted">{item.equipmentInput ?? item.equipmentNoNormalized} · {item.faultDescription}</span>
+              </div>
+              <span className={`chip ${priorityChip[item.priorityLevel]}`}>{priorityLabel[item.priorityLevel]}</span>
             </div>
-            <span className={`chip ${priorityChip[item.priorityLevel]}`}>{priorityLabel[item.priorityLevel]}</span>
-          </div>
-          <div className="chips">
-            <span className="chip">{labelStatus(item.status)}</span>
-            <span className="chip">목표일 {formatDate(item.targetDueDate)}</span>
-            <span className="chip">{item.assignedMechanic?.name ?? "미배정"}</span>
-          </div>
-        </button>
-      ))}
+            <div className="chips">
+              <span className="chip">{labelStatus(item.status)}</span>
+              <span className="chip">목표일 {formatDate(item.targetDueDate)}</span>
+              <span className="chip">{item.assignedMechanic?.name ?? "미배정"}</span>
+            </div>
+          </button>
+        ))}
+      </div>
+      {pageCount > 1 ? (
+        <div className="pagination-bar" aria-label="정비건 페이지">
+          <button type="button" disabled={safePage <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))}>
+            <ChevronLeft size={14} />이전
+          </button>
+          <span>{safePage} / {pageCount}</span>
+          <button type="button" disabled={safePage >= pageCount} onClick={() => setPage((current) => Math.min(pageCount, current + 1))}>
+            다음<ChevronRight size={14} />
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -3125,6 +3215,8 @@ function EquipmentPanel({ canManage, onOpenWorkOrder }: { canManage: boolean; on
   const [riskFilter, setRiskFilter] = useState("ALL");
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(12);
   const [form, setForm] = useState({
     status: "",
     managerName: "",
@@ -3183,6 +3275,15 @@ function EquipmentPanel({ canManage, onOpenWorkOrder }: { canManage: boolean; on
     if (!filtered.length) return;
     if (!selectedId || !filtered.some((asset) => asset.id === selectedId)) setSelectedId(filtered[0].id);
   }, [filtered, selectedId]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [filtered.length, pageSize]);
+
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const safePage = Math.min(page, pageCount);
+  const firstIndex = (safePage - 1) * pageSize;
+  const visibleAssets = filtered.slice(firstIndex, firstIndex + pageSize);
 
   const criticalCount = assets.filter((asset) => asset.riskLevel === "CRITICAL").length;
   const watchCount = assets.filter((asset) => asset.riskLevel === "WATCH").length;
@@ -3257,8 +3358,19 @@ function EquipmentPanel({ canManage, onOpenWorkOrder }: { canManage: boolean; on
       </div>
       <div className="equipment-layout">
         <section className="equipment-list" aria-label="장비 목록">
+          <div className="list-toolbar">
+            <div className="pager-meta">
+              <label>
+                표시
+                <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}>
+                  {workListPageSizes.map((size) => <option key={size} value={size}>{size}대</option>)}
+                </select>
+              </label>
+              <span>{filtered.length ? `${firstIndex + 1}-${Math.min(firstIndex + visibleAssets.length, filtered.length)} / ${filtered.length}대` : "0대"}</span>
+            </div>
+          </div>
           {filtered.length ? (
-            filtered.map((asset) => (
+            visibleAssets.map((asset) => (
               <button
                 className={`equipment-row ${asset.riskLevel.toLowerCase()} ${asset.id === selected?.id ? "selected" : ""}`}
                 key={asset.id}
@@ -3281,6 +3393,17 @@ function EquipmentPanel({ canManage, onOpenWorkOrder }: { canManage: boolean; on
           ) : (
             <p className="notice">조건에 맞는 장비가 없습니다.</p>
           )}
+          {pageCount > 1 ? (
+            <div className="pagination-bar">
+              <button type="button" disabled={safePage <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))}>
+                <ChevronLeft size={14} />이전
+              </button>
+              <span>{safePage} / {pageCount}</span>
+              <button type="button" disabled={safePage >= pageCount} onClick={() => setPage((current) => Math.min(pageCount, current + 1))}>
+                다음<ChevronRight size={14} />
+              </button>
+            </div>
+          ) : null}
         </section>
         <aside className="equipment-detail">
           {selected ? (
@@ -3607,20 +3730,53 @@ function Insight({ title, value, text, tone }: { title: string; value: string; t
 }
 
 function SimpleTable({ rows, title }: { rows: Record<string, unknown>[]; title: string }) {
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(12);
   const keys = Object.keys(rows[0] ?? {});
+  const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
+  const safePage = Math.min(page, pageCount);
+  const firstIndex = (safePage - 1) * pageSize;
+  const visibleRows = rows.slice(firstIndex, firstIndex + pageSize);
+
+  useEffect(() => {
+    setPage(1);
+  }, [rows.length, pageSize]);
+
   return (
     <div className="section">
-      <h3>{title}</h3>
+      <div className="section-header">
+        <h3>{title}</h3>
+        <div className="pager-meta">
+          <label>
+            표시
+            <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}>
+              {workListPageSizes.map((size) => <option key={size} value={size}>{size}건</option>)}
+            </select>
+          </label>
+          <span>{rows.length ? `${firstIndex + 1}-${Math.min(firstIndex + visibleRows.length, rows.length)} / ${rows.length}건` : "0건"}</span>
+        </div>
+      </div>
       <div className="table-wrap">
         <table>
           <thead><tr>{keys.map((key) => <th key={key}>{key}</th>)}</tr></thead>
           <tbody>
-            {rows.map((row, index) => (
+            {visibleRows.map((row, index) => (
               <tr key={index}>{keys.map((key) => <td key={key}>{formatCell(row[key])}</td>)}</tr>
             ))}
           </tbody>
         </table>
       </div>
+      {pageCount > 1 ? (
+        <div className="pagination-bar">
+          <button type="button" disabled={safePage <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))}>
+            <ChevronLeft size={14} />이전
+          </button>
+          <span>{safePage} / {pageCount}</span>
+          <button type="button" disabled={safePage >= pageCount} onClick={() => setPage((current) => Math.min(pageCount, current + 1))}>
+            다음<ChevronRight size={14} />
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

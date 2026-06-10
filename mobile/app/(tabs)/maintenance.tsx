@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { WorkOrder } from "../../src/api/types";
+import { PagedWorkOrderList } from "../../src/components/PagedWorkOrderList";
 import { Screen } from "../../src/components/Screen";
-import { WorkOrderCard } from "../../src/components/WorkOrderCard";
 import { WorkOrderDetail } from "../../src/components/WorkOrderDetail";
 import { useWorkOrders } from "../../src/hooks/useWorkOrders";
 import { colors } from "../../src/theme/theme";
@@ -26,7 +26,7 @@ export default function MaintenanceScreen() {
   );
 
   return (
-    <Screen title="정비건" subtitle="미결 정비건을 priority별로 확인합니다." loading={loading} refreshing={refreshing} onRefresh={refresh}>
+    <Screen title="정비건" subtitle="미결 정비건을 Priority별로 확인합니다." loading={loading} refreshing={refreshing} onRefresh={refresh}>
       {error ? <Text style={styles.error}>{error}</Text> : null}
       <View style={styles.filterRow}>
         {priorityFilters.map((filter) => (
@@ -40,11 +40,7 @@ export default function MaintenanceScreen() {
         ))}
       </View>
       <Text style={styles.count}>표시 {rows.length}건</Text>
-      {rows.length ? (
-        rows.map((row) => <WorkOrderCard key={row.id} workOrder={row} onPress={() => setSelected(row)} />)
-      ) : (
-        <Text style={styles.empty}>조건에 맞는 미결 정비건이 없습니다.</Text>
-      )}
+      <PagedWorkOrderList rows={rows} onSelect={setSelected} emptyText="조건에 맞는 미결 정비건이 없습니다." />
       <WorkOrderDetail visible={Boolean(selected)} workOrder={selected} onClose={() => setSelected(null)} onChanged={refresh} />
     </Screen>
   );
@@ -87,10 +83,5 @@ const styles = StyleSheet.create({
     color: colors.red,
     fontWeight: "800",
     padding: 12
-  },
-  empty: {
-    color: colors.muted,
-    padding: 16,
-    textAlign: "center"
   }
 });

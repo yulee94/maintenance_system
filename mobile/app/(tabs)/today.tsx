@@ -1,10 +1,10 @@
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useMemo, useState } from "react";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import type { WorkOrder } from "../../src/api/types";
 import { useAuth } from "../../src/api/AuthContext";
+import { PagedWorkOrderList } from "../../src/components/PagedWorkOrderList";
 import { Screen } from "../../src/components/Screen";
 import { SummaryCard } from "../../src/components/SummaryCard";
-import { WorkOrderCard } from "../../src/components/WorkOrderCard";
 import { WorkOrderDetail } from "../../src/components/WorkOrderDetail";
 import { useWorkOrders } from "../../src/hooks/useWorkOrders";
 import { colors } from "../../src/theme/theme";
@@ -27,7 +27,8 @@ export default function TodayScreen() {
     if (filter === "urgent") return urgentRows;
     return todayRows;
   }, [completedRows, filter, openRows, todayRows, urgentRows]);
-  const title = filter === "open" ? "미결 업무" : filter === "completed" ? "완료건" : filter === "urgent" ? "긴급 업무" : "오늘 진행 작업";
+  const title =
+    filter === "open" ? "미결 업무" : filter === "completed" ? "완료건" : filter === "urgent" ? "긴급 업무" : "오늘 진행 업무";
 
   async function handleLogout() {
     await logout();
@@ -58,7 +59,7 @@ export default function TodayScreen() {
 
       {alerts.length ? (
         <View style={styles.alertBox}>
-          <Text style={styles.sectionTitle}>AI 장비 경고</Text>
+          <Text style={styles.sectionTitle}>AI 정비 경고</Text>
           {alerts.map((alert) => (
             <TouchableOpacity key={alert.id} style={styles.alertRow} onPress={() => alert.workOrder && setSelected(alert.workOrder)}>
               <Text style={styles.alertText}>{alert.message}</Text>
@@ -71,11 +72,7 @@ export default function TodayScreen() {
         <Text style={styles.sectionTitle}>{title}</Text>
         <Text style={styles.count}>{visibleRows.length}건</Text>
       </View>
-      {visibleRows.length ? (
-        visibleRows.map((row) => <WorkOrderCard key={row.id} workOrder={row} onPress={() => setSelected(row)} />)
-      ) : (
-        <Text style={styles.empty}>표시할 정비건이 없습니다.</Text>
-      )}
+      <PagedWorkOrderList rows={visibleRows} onSelect={setSelected} />
       <WorkOrderDetail visible={Boolean(selected)} workOrder={selected} onClose={() => setSelected(null)} onChanged={refresh} />
     </Screen>
   );
@@ -155,10 +152,5 @@ const styles = StyleSheet.create({
     color: colors.red,
     fontWeight: "800",
     padding: 12
-  },
-  empty: {
-    color: colors.muted,
-    padding: 16,
-    textAlign: "center"
   }
 });
